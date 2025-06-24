@@ -1,5 +1,4 @@
-import { MenuIcon } from "lucide-react";
-import { Button } from "./ui/button";
+import Sidebar from "./sidebar";
 import { Card, CardContent } from "./ui/card";
 import Image from "next/image";
 
@@ -8,9 +7,7 @@ const Header = () => {
     <Card>
       <CardContent className="flex flex-row items-center justify-between pl-2 z-50">
         <Image src="/logo.png" height={18} width={120} alt="Logo" />
-        <Button variant="outline">
-          <MenuIcon />
-        </Button>
+        <Sidebar variant="ghost" />
       </CardContent>
     </Card>
   );
