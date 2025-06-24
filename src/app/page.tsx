@@ -1,6 +1,5 @@
 import Header from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SearchIcon } from "lucide-react";
 import Image from "next/image";
@@ -62,14 +61,6 @@ export default async function Home() {
           ))}
         </div>
       </div>
-
-      <footer>
-        <Card>
-          <CardContent className="py-2">
-            <p className="text-sm">Todos direitos Reservados Simply Barber</p>
-          </CardContent>
-        </Card>
-      </footer>
     </div>
   );
 }

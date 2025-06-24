@@ -8,7 +8,7 @@ const Header = () => {
     <Card>
       <CardContent className="flex flex-row items-center justify-between pl-2 z-50">
         <Image src="/logo.png" height={18} width={120} alt="Logo" />
-        <Button>
+        <Button variant="outline">
           <MenuIcon />
         </Button>
       </CardContent>
