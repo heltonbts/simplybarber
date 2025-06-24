@@ -31,6 +31,44 @@ export default async function Home() {
           </Button>
         </div>
 
+        <div className="flex gap-3 mt-6 overflow-x-scroll [&::-webkit-scrollbar]:hidden">
+          <Button className="gap-2" variant="secondary">
+            <Image src="/cabelo.svg" alt="Cabelo" width={16} height={16} />
+            Cabelo
+          </Button>
+          <Button className="gap-2" variant="secondary">
+            <Image src="/barba.svg" alt="Barba" width={16} height={16} />
+            Barba
+          </Button>
+          <Button className="gap-2" variant="secondary">
+            <Image
+              src="/acabamento.svg"
+              alt="Acabamento"
+              width={16}
+              height={16}
+            />
+            Acabamento
+          </Button>
+          <Button className="gap-2" variant="secondary">
+            <Image
+              src="/acabamento.svg"
+              alt="Acabamento"
+              width={16}
+              height={16}
+            />
+            Pezinho
+          </Button>
+          <Button className="gap-2" variant="secondary">
+            <Image
+              src="/acabamento.svg"
+              alt="Acabamento"
+              width={16}
+              height={16}
+            />
+            Sobrancelha
+          </Button>
+        </div>
+
         <div className="relative w-full h-[150px] mt-6">
           <Image
             src="/banner-01.png"
