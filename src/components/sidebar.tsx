@@ -1,4 +1,14 @@
-import { Calendar1Icon, HomeIcon, LogOutIcon, MenuIcon } from "lucide-react";
+"use client";
+
+import { signIn, useSession, signOut } from "next-auth/react";
+
+import {
+  Calendar1Icon,
+  HomeIcon,
+  LogInIcon,
+  LogOutIcon,
+  MenuIcon,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import {
   Sheet,
@@ -10,8 +20,16 @@ import {
 } from "@/components/ui/sheet";
 import { quickSeachOptions } from "./constants/seach";
 import Image from "next/image";
-import { Avatar, AvatarImage } from "./ui/avatar";
 import Link from "next/link";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Avatar, AvatarImage } from "./ui/avatar";
 
 interface SidebarProps {
   variant?:
@@ -24,6 +42,15 @@ interface SidebarProps {
 }
 
 const Sidebar = ({ variant }: SidebarProps) => {
+  const { data } = useSession();
+
+  const loginWithGoogle = async () => {
+    await signIn("google");
+  };
+  const HandleSignOut = async () => {
+    await signOut();
+  };
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -36,15 +63,52 @@ const Sidebar = ({ variant }: SidebarProps) => {
           <SheetTitle>Menu</SheetTitle>
         </SheetHeader>
 
-        <div className="p-5 pt-0 border-b border-solid flex items-center gap-2">
-          <Avatar>
-            <AvatarImage src="/avatar.png" />
-          </Avatar>
-          <div>
-            <h3 className="text-sm font-bold">Helton Batista</h3>
-            <p className="text-xs text-gray-400">heltonbts@icloud.com</p>
+        {data?.user ? (
+          <div className="p-5 pt-0 border-b border-solid flex items-center gap-2 justify-start">
+            <Avatar>
+              <AvatarImage
+                width={18}
+                height={18}
+                src={data?.user?.image}
+                alt={data?.user?.name || "User"}
+              />
+            </Avatar>
+            <div>
+              <h3 className="text-sm font-bold">
+                {data?.user?.name || "Usuário"}
+              </h3>
+              <p className="text-xs text-gray-400">{data?.user.email}</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="p-5 pt-0 border-b border-solid flex items-center gap-2 justify-between">
+            <h2 className="font-bold">Olá, Faça seu Login!</h2>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button size="icon">
+                  <LogInIcon size="icon" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="w-[90%]">
+                <DialogHeader>
+                  <DialogTitle>Faça o seu login</DialogTitle>
+                  <DialogDescription>
+                    Conecte-se usando sua conta do Google.
+                  </DialogDescription>
+                  <Button onClick={loginWithGoogle} variant="outline">
+                    <Image
+                      alt="Faça o seu login com google"
+                      src="/google.svg"
+                      width={18}
+                      height={18}
+                    />{" "}
+                    <p className="font-bold text-white">Google</p>
+                  </Button>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
 
         <div className="p-5 flex flex-col gap-3 border-b border-solid">
           <SheetClose asChild>
@@ -79,7 +143,12 @@ const Sidebar = ({ variant }: SidebarProps) => {
         </div>
 
         <div className="p-5 flex flex-col gap-2">
-          <Button variant="ghost" className="justify-start" size={18}>
+          <Button
+            variant="ghost"
+            className="justify-start"
+            size="sm"
+            onClick={HandleSignOut}
+          >
             <LogOutIcon />
             Sair da conta
           </Button>

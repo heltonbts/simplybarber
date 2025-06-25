@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 import { Card, CardContent } from "@/components/ui/card";
+import AuthProvider from "./providers/auth";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,17 +30,19 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
-        <Toaster />
-        <footer>
-          <Card>
-            <CardContent className="py-2">
-              <p className="text-sm text-gray-400">
-                Todos direitos Reservados © Simply Barber
-              </p>
-            </CardContent>
-          </Card>
-        </footer>
+        <AuthProvider>
+          {children}
+
+          <footer>
+            <Card>
+              <CardContent className="py-2">
+                <p className="text-sm text-gray-400">
+                  Todos direitos Reservados © Simply Barber
+                </p>
+              </CardContent>
+            </Card>
+          </footer>
+        </AuthProvider>
       </body>
     </html>
   );
