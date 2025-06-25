@@ -31,17 +31,19 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          {children}
-
-          <footer>
-            <Card>
-              <CardContent className="py-2">
-                <p className="text-sm text-gray-400">
-                  Todos direitos Reservados © Simply Barber
-                </p>
-              </CardContent>
-            </Card>
-          </footer>
+          <div className="flex h-full flex-col">
+            <div className="flex-1">{children}</div>
+            <footer>
+              <Card>
+                <CardContent className="py-2">
+                  <p className="text-sm text-gray-400">
+                    Todos direitos Reservados © Simply Barber
+                  </p>
+                </CardContent>
+              </Card>
+            </footer>
+          </div>
+          <Toaster />
         </AuthProvider>
       </body>
     </html>

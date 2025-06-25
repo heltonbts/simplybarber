@@ -69,7 +69,7 @@ const Sidebar = ({ variant }: SidebarProps) => {
               <AvatarImage
                 width={18}
                 height={18}
-                src={data?.user?.image}
+                src={data?.user?.image ?? ""}
                 alt={data?.user?.name || "User"}
               />
             </Avatar>

@@ -1,13 +1,11 @@
 import Header from "@/components/header";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { SearchIcon } from "lucide-react";
 import Image from "next/image";
 import { db } from "@/lib/prisma";
 import BarbershopItem from "@/components/barbershop-item";
 import QuickSearch from "@/components/quickSeach";
 import Booking from "@/components/booking";
 import UserNameAndData from "@/components/name-user";
+import SearchItems from "@/components/searchItems";
 
 export default async function Home() {
   const barbershops = await db.barbershop.findMany({});
@@ -23,13 +21,9 @@ export default async function Home() {
       <div className="p-5">
         <UserNameAndData />
 
-        <div className="flex items-center gap-2 mt-6">
-          <Input placeholder="Buscar" />
-          <Button size="icon">
-            <SearchIcon />
-          </Button>
+        <div className="mt-4 px-5">
+          <SearchItems />
         </div>
-
         <QuickSearch />
 
         <div className="relative w-full h-[150px] mt-6">
