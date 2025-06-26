@@ -21,7 +21,7 @@ export default async function Home() {
       <div className="p-5">
         <UserNameAndData />
 
-        <div className="mt-4 px-5">
+        <div className="mt-4">
           <SearchItems />
         </div>
         <QuickSearch />

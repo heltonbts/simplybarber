@@ -17,20 +17,24 @@ import { SearchIcon } from "lucide-react";
 
 const SearchItems = () => {
   const formSchema = z.object({
-    search: z.string().min(1, "Digite algo para buscar").trim().max(30),
+    title: z
+      .string()
+      .min(1, "Digite algo para buscar")
+      .trim()
+      .max(30, "Maximo de carácteres permitido"),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      search: "",
+      title: "",
     },
   });
 
   const router = useRouter();
 
   const handleSearch = (data: z.infer<typeof formSchema>) => {
-    router.push(`/barbershops?search=${data.search}`);
+    router.push(`/barbershops?title=${data.title}`);
   };
 
   return (
@@ -38,7 +42,7 @@ const SearchItems = () => {
       <form onSubmit={form.handleSubmit(handleSearch)} className="flex gap-2">
         <FormField
           control={form.control}
-          name="search"
+          name="title"
           render={({ field }) => (
             <FormItem className="w-full">
               <FormControl>

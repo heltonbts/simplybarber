@@ -126,19 +126,23 @@ const Sidebar = ({ variant }: SidebarProps) => {
 
         <div className="p-5 flex flex-col gap-3 border-b border-solid">
           {quickSeachOptions.map((option) => (
-            <Button
-              key={option.title}
-              className="text-white-800 justify-start"
-              variant="ghost"
-            >
-              <Image
-                src={option.imageUrl}
-                height={18}
-                width={18}
-                alt={option.title}
-              />
-              {option.title}
-            </Button>
+            <SheetClose asChild key={option.title}>
+              <Button
+                asChild
+                className="text-white-800 justify-start"
+                variant="ghost"
+              >
+                <Link href={`/barbershops?services=${option.title}`}>
+                  <Image
+                    src={option.imageUrl}
+                    height={18}
+                    width={18}
+                    alt={option.title}
+                  />
+                  {option.title}
+                </Link>
+              </Button>
+            </SheetClose>
           ))}
         </div>
 
