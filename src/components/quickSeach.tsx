@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "./ui/button";
 import Image from "next/image";
 
@@ -32,14 +33,21 @@ const QuickSearch = () => {
   return (
     <div className="flex gap-3 mt-6 overflow-x-scroll [&::-webkit-scrollbar]:hidden">
       {quickSeachOptions.map((option) => (
-        <Button className="gap-2" variant="secondary" key={option.title}>
-          <Image
-            src={option.imageUrl}
-            alt={option.title}
-            width={16}
-            height={16}
-          />
-          {option.title}
+        <Button
+          asChild
+          className="gap-2"
+          variant="secondary"
+          key={option.title}
+        >
+          <Link href={`/barbershops?services=${option.title}`}>
+            <Image
+              src={option.imageUrl}
+              alt={option.title}
+              width={16}
+              height={16}
+            />
+            {option.title}
+          </Link>
         </Button>
       ))}
     </div>

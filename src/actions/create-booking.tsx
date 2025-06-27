@@ -6,10 +6,21 @@ interface createBookingParams {
   serviceId: string;
   userId: string;
   date: Date;
+  barbershopId?: string;
 }
 
-export const createBooking = async (params: createBookingParams) => {
+export const createBooking = async ({
+  userId,
+  serviceId,
+  date,
+  barbershopId,
+}: createBookingParams) => {
   await db.booking.create({
-    data: params,
+    data: {
+      userId,
+      serviceId,
+      date,
+      barbershopId,
+    },
   });
 };
