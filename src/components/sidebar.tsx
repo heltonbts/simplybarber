@@ -119,8 +119,14 @@ const Sidebar = ({ variant }: SidebarProps) => {
               </Link>
             </Button>
           </SheetClose>
-          <Button className="text-white-800 justify-start" variant="ghost">
-            <Calendar1Icon size={18} /> Agendamentos
+          <Button
+            asChild
+            className="text-white-800 justify-start"
+            variant="ghost"
+          >
+            <Link href="/bookings">
+              <Calendar1Icon size={18} /> Agendamentos
+            </Link>
           </Button>
         </div>
 

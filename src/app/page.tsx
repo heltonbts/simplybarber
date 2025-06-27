@@ -6,14 +6,43 @@ import QuickSearch from "@/components/quickSeach";
 import Booking from "@/components/booking";
 import UserNameAndData from "@/components/name-user";
 import SearchItems from "@/components/searchItems";
+import { getServerSession } from "next-auth";
+import { authOptions } from "./api/auth/[...nextauth]/route";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
 
 export default async function Home() {
+  const session = await getServerSession(authOptions);
   const barbershops = await db.barbershop.findMany({});
   const popularBarbershops = await db.barbershop.findMany({
     orderBy: {
       name: "desc",
     },
   });
+
+  const bookings = session?.user
+    ? await db.booking.findMany({
+        where: {
+          userId: session?.user.id,
+        },
+        include: {
+          service: {
+            include: {
+              barbershop: true,
+            },
+          },
+        },
+      })
+    : [];
+
+  const confirmedBoking = bookings.filter(
+    (booking) => booking.date >= new Date(),
+  );
 
   return (
     <div>
@@ -34,8 +63,23 @@ export default async function Home() {
             className="object-cover rounded-xl"
           />
         </div>
+        <h2 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-400">
+          Próximos Agendamentos
+        </h2>
 
-        <Booking />
+        <div className="px-6">
+          <Carousel className="w-full max-w-xs">
+            <CarouselContent>
+              {confirmedBoking.map((booking) => (
+                <CarouselItem key={booking.id} className="w-full">
+                  <Booking booking={booking} />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+            <CarouselPrevious />
+            <CarouselNext />
+          </Carousel>
+        </div>
 
         <h2 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-400">
           recomendados
