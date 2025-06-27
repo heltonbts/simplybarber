@@ -42,7 +42,7 @@ interface SidebarProps {
 }
 
 const Sidebar = ({ variant }: SidebarProps) => {
-  const { data } = useSession();
+  const { data, status } = useSession();
 
   const loginWithGoogle = async () => {
     await signIn("google");
@@ -147,15 +147,17 @@ const Sidebar = ({ variant }: SidebarProps) => {
         </div>
 
         <div className="p-5 flex flex-col gap-2">
-          <Button
-            variant="ghost"
-            className="justify-start"
-            size="sm"
-            onClick={HandleSignOut}
-          >
-            <LogOutIcon />
-            Sair da conta
-          </Button>
+          {status === "authenticated" && (
+            <Button
+              variant="ghost"
+              className="justify-start"
+              size="sm"
+              onClick={HandleSignOut}
+            >
+              <LogOutIcon />
+              Sair da conta
+            </Button>
+          )}
         </div>
       </SheetContent>
     </Sheet>
