@@ -40,20 +40,18 @@ const Bookings = async () => {
     <>
       <Header />
       <div className="p-5 space-y-3">
-        {confirmedBoking.length ||
-          (pastBoking.length <= 0 && (
-            <>
-              <h2 className="text-xl font-semibold">
-                Nenhuma reserva encontrada.
-              </h2>
-              <h3 className="mb-3 mt-6 text-xs font-bold text-gray-600">
-                Você ainda não agendou nenhum serviço. Que tal marcar um
-                horário?
-              </h3>
-            </>
-          ))}
-        {confirmedBoking.length > 0 && (
+        {confirmedBoking.length === 0 && pastBoking.length === 0 && (
           <>
+            <h2 className="text-xl font-semibold">
+              Nenhuma reserva encontrada.
+            </h2>
+            <h3 className="mb-3 mt-6 text-xs font-bold text-gray-600">
+              Você ainda não agendou nenhum serviço. Que tal marcar um horário?
+            </h3>
+          </>
+        )}
+        {confirmedBoking.length > 0 && (
+          <div>
             <h1 className="text-xl font-bold">Agendamentos</h1>
             <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
               Confirmados
@@ -64,7 +62,7 @@ const Bookings = async () => {
                 key={bookings.id}
               />
             ))}
-          </>
+          </div>
         )}
 
         {pastBoking.length > 0 && (

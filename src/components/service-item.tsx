@@ -16,7 +16,7 @@ import {
 import { ptBR } from "react-day-picker/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { useEffect, useState } from "react";
-import { format, set } from "date-fns";
+import { format, isPast, set } from "date-fns";
 import { createBooking } from "@/actions/create-booking";
 import { toast } from "sonner";
 import { useSession } from "next-auth/react";
@@ -141,15 +141,26 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
       const hour = Number(time.split(":")[0]);
       const minutes = Number(time.split(":")[1]);
 
+      const selectedDate = selectedDay || new Date();
+
+      const timeAsDate = set(selectedDate, {
+        hours: hour,
+        minutes: minutes,
+        seconds: 0,
+        milliseconds: 0,
+      });
+
+      const isToday =
+        format(selectedDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+
       const hasBookingOnCurrentTime = bookings.some(
         (booking) =>
           booking.date.getHours() === hour &&
           booking.date.getMinutes() === minutes,
       );
 
-      if (hasBookingOnCurrentTime) {
-        return false;
-      }
+      if (hasBookingOnCurrentTime) return false;
+      if (isToday && isPast(timeAsDate)) return false;
 
       return true;
     });
@@ -226,7 +237,7 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
                       }}
                     />
                   </div>
-                  {selectedDay && (
+                  {selectedDay && getTimeList.length > 0 ? (
                     <div className="overflow-x-auto overflow-y-hidden items-center flex gap-3 py-5 [&::-webkit-scrollbar]:hidden border-b border-solid">
                       {getTimeList(dayBooking).map((time) => (
                         <Button
@@ -240,6 +251,10 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
                         </Button>
                       ))}
                     </div>
+                  ) : (
+                    <p className="p-5 text-sm text-gray-500">
+                      Nenhum horário disponível para esse dia.
+                    </p>
                   )}
                   {selectedTime && (
                     <div>
