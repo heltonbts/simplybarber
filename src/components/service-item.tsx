@@ -24,7 +24,8 @@ import { getBooking } from "@/actions/get-booking";
 
 interface ServiceItemProps {
   service: BarbershopService;
-  barbershop: Pick<Barbershop, "name">;
+  barbershop: Barbershop;
+  userId: string;
 }
 
 const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
@@ -77,18 +78,27 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
         return;
       }
 
-      await createBooking({
+      const result = await createBooking({
         serviceId: service.id,
-        userId: sessionData?.user.id,
+        barbershopId: barbershop.id,
         date: newDate,
       });
+
+      if (result && !result.success) {
+        toast.error(result.error || "Erro ao criar reserva");
+        return;
+      }
+
       toast.success("Reservado com Sucesso!");
+
+      setBookingSheetIsOpen(false);
+      setSelectedDay(undefined);
+      setSelectedTime(undefined);
     } catch (error) {
       console.log(error);
-      toast("Error ao criar reserva");
+      toast.error("Erro ao criar reserva");
     }
   };
-
   const today = new Date();
 
   const [dayBooking, setDayBooking] = useState<Booking[]>([]);
