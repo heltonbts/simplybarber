@@ -28,6 +28,14 @@ const Bookings = async () => {
   );
   const pastBoking = bookings.filter((booking) => booking.date < new Date());
 
+  const convertBookingPrice = (booking: (typeof bookings)[0]) => ({
+    ...booking,
+    service: {
+      ...booking.service,
+      price: booking.service.price.toNumber(),
+    },
+  });
+
   return (
     <>
       <Header />
@@ -37,13 +45,19 @@ const Bookings = async () => {
           Confirmados
         </h3>
         {confirmedBoking.map((bookings) => (
-          <BookingItem booking={bookings} key={bookings.id} />
+          <BookingItem
+            booking={convertBookingPrice(bookings)}
+            key={bookings.id}
+          />
         ))}
         <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
           Finalizados
         </h3>
         {pastBoking.map((bookings) => (
-          <BookingItem booking={bookings} key={bookings.id} />
+          <BookingItem
+            booking={convertBookingPrice(bookings)}
+            key={bookings.id}
+          />
         ))}
       </div>
     </>
