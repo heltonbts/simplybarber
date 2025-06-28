@@ -40,25 +40,46 @@ const Bookings = async () => {
     <>
       <Header />
       <div className="p-5 space-y-3">
-        <h1 className="text-xl font-bold">Agendamentos</h1>
-        <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
-          Confirmados
-        </h3>
-        {confirmedBoking.map((bookings) => (
-          <BookingItem
-            booking={convertBookingPrice(bookings)}
-            key={bookings.id}
-          />
-        ))}
-        <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
-          Finalizados
-        </h3>
-        {pastBoking.map((bookings) => (
-          <BookingItem
-            booking={convertBookingPrice(bookings)}
-            key={bookings.id}
-          />
-        ))}
+        {confirmedBoking.length ||
+          (pastBoking.length <= 0 && (
+            <>
+              <h2 className="text-xl font-semibold">
+                Nenhuma reserva encontrada.
+              </h2>
+              <h3 className="mb-3 mt-6 text-xs font-bold text-gray-600">
+                Você ainda não agendou nenhum serviço. Que tal marcar um
+                horário?
+              </h3>
+            </>
+          ))}
+        {confirmedBoking.length > 0 && (
+          <>
+            <h1 className="text-xl font-bold">Agendamentos</h1>
+            <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
+              Confirmados
+            </h3>
+            {confirmedBoking.map((bookings) => (
+              <BookingItem
+                booking={convertBookingPrice(bookings)}
+                key={bookings.id}
+              />
+            ))}
+          </>
+        )}
+
+        {pastBoking.length > 0 && (
+          <>
+            <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
+              Finalizado
+            </h3>
+            {pastBoking.map((bookings) => (
+              <BookingItem
+                booking={convertBookingPrice(bookings)}
+                key={bookings.id}
+              />
+            ))}
+          </>
+        )}
       </div>
     </>
   );
