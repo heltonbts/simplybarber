@@ -67,19 +67,28 @@ export default async function Home() {
           Próximos Agendamentos
         </h2>
 
-        <div className="px-6">
-          <Carousel className="w-full max-w-xs">
-            <CarouselContent>
-              {confirmedBoking.map((booking) => (
-                <CarouselItem key={booking.id} className="w-full">
-                  <Booking booking={booking} />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-            <CarouselPrevious />
-            <CarouselNext />
-          </Carousel>
-        </div>
+        {confirmedBoking.length > 0 ? (
+          <div className="px-6">
+            <Carousel className="w-full max-w-xs">
+              <CarouselContent>
+                {confirmedBoking.map((booking) => (
+                  <CarouselItem key={booking.id} className="w-full">
+                    <Booking booking={booking} />
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              <CarouselPrevious />
+              <CarouselNext />
+            </Carousel>
+          </div>
+        ) : (
+          <div className="px-6">
+            <p className="text-sm text-gray-600">
+              Nenhum agendamento encontrado. Reserve seu horário com poucos
+              cliques e evite filas.
+            </p>
+          </div>
+        )}
 
         <h2 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-400">
           recomendados
