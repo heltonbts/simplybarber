@@ -7,7 +7,7 @@ import Booking from "@/components/booking";
 import UserNameAndData from "@/components/name-user";
 import SearchItems from "@/components/searchItems";
 import { getServerSession } from "next-auth";
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import {
   Carousel,
   CarouselContent,

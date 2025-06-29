@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { format, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"; // Ajuste o caminho se necessário
+import { authOptions } from "@/lib/auth"; // Ajuste o caminho se necessário
 import { db } from "@/lib/prisma";
 
 // Importando componentes do shadcn/ui
