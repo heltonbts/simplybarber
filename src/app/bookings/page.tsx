@@ -1,9 +1,10 @@
-import Header from "@/components/header";
+import Header from "@/components/headers";
 import { db } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import BookingItem from "@/components/booking";
+import { Decimal } from "@prisma/client/runtime/library";
 
 const Bookings = async () => {
   const session = await getServerSession(authOptions);
@@ -32,7 +33,7 @@ const Bookings = async () => {
     ...booking,
     service: {
       ...booking.service,
-      price: booking.service.price.toNumber(),
+      price: new Decimal(booking.service.price),
     },
   });
 

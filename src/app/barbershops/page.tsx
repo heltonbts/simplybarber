@@ -1,33 +1,36 @@
 import BarbershopItem from "@/components/barbershop-item";
-import Header from "@/components/header";
+import Header from "@/components/headers";
 import SearchItems from "@/components/searchItems";
 import { db } from "@/lib/prisma";
 
 interface BarbershopsProp {
-  searchParams?: {
+  searchParams?: Promise<{
     title?: string;
     services?: string;
-  };
+  }>;
 }
 
 const BarbershopsPage = async ({ searchParams }: BarbershopsProp) => {
+  // Aguarda a resolução dos searchParams
+  const resolvedSearchParams = await searchParams;
+
   const filters = [];
 
-  if (searchParams?.title) {
+  if (resolvedSearchParams?.title) {
     filters.push({
       name: {
-        contains: searchParams.title,
+        contains: resolvedSearchParams.title,
         mode: "insensitive" as const,
       },
     });
   }
 
-  if (searchParams?.services) {
+  if (resolvedSearchParams?.services) {
     filters.push({
       services: {
         some: {
           name: {
-            contains: searchParams.services,
+            contains: resolvedSearchParams.services,
             mode: "insensitive" as const,
           },
         },
@@ -48,7 +51,7 @@ const BarbershopsPage = async ({ searchParams }: BarbershopsProp) => {
       <div className="px-5">
         <h1 className="mb-3 mt-6 text-xs font-bold uppercase text-gray-600">
           Resultados Para &quot;
-          {searchParams?.title || searchParams?.services}&quot;
+          {resolvedSearchParams?.title || resolvedSearchParams?.services}&quot;
         </h1>
         <div className="grid grid-cols-2 gap-4 my-4">
           {barbershop.map((barbershop) => (

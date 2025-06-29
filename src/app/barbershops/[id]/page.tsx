@@ -7,15 +7,16 @@ import { ChevronLeftIcon, MapPinIcon, StarIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
-interface BarbershopPageProps {
-  params: {
-    id: string;
-  };
+interface PageProps {
+  params: Promise<{ id: string }>;
 }
-const BarbershopPage = async ({ params }: BarbershopPageProps) => {
+
+export default async function BarbershopPage({ params }: PageProps) {
+  const { id } = await params;
+
   const barbershop = await db.barbershop.findUnique({
     where: {
-      id: params.id,
+      id: id,
     },
     include: {
       services: true,
@@ -78,6 +79,7 @@ const BarbershopPage = async ({ params }: BarbershopPageProps) => {
               key={service.id}
               barbershop={barbershop}
               service={service}
+              userId={barbershop.ownerId}
             />
           ))}
         </div>
@@ -90,6 +92,4 @@ const BarbershopPage = async ({ params }: BarbershopPageProps) => {
       </div>
     </div>
   );
-};
-
-export default BarbershopPage;
+}
