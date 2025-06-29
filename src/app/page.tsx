@@ -1,4 +1,4 @@
-import Header from "@/components/header";
+import Header from "@/components/headers";
 import Image from "next/image";
 import { db } from "@/lib/prisma";
 import BarbershopItem from "@/components/barbershop-item";
