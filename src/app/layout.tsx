@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 import { Card, CardContent } from "@/components/ui/card";
 import AuthProvider from "./providers/auth";
+import { PhoneVerificationWrapper } from "@/actions/phoneVerificationWrapper";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,19 +32,21 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          <div className="flex h-full flex-col">
-            <div className="flex-1">{children}</div>
-            <footer>
-              <Card>
-                <CardContent className="py-2">
-                  <p className="text-sm text-gray-400">
-                    Todos direitos Reservados © Simply Barber
-                  </p>
-                </CardContent>
-              </Card>
-            </footer>
-          </div>
-          <Toaster />
+          <PhoneVerificationWrapper>
+            <div className="flex h-full flex-col">
+              <div className="flex-1">{children}</div>
+              <footer>
+                <Card>
+                  <CardContent className="py-2">
+                    <p className="text-sm text-gray-400">
+                      Todos direitos Reservados © Simply Barber
+                    </p>
+                  </CardContent>
+                </Card>
+              </footer>
+            </div>
+            <Toaster />
+          </PhoneVerificationWrapper>
         </AuthProvider>
       </body>
     </html>

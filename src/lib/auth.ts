@@ -12,12 +12,39 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) token.id = user.id;
+    async jwt({ token }) {
+      if (!token.email) {
+        return token;
+      }
+
+      // Busca o usuário no banco de dados para obter todos os campos
+      const dbUser = await db.user.findUnique({
+        where: {
+          email: token.email,
+        },
+      });
+
+      // Se o usuário existir no banco, atualiza o token com os dados dele
+      if (dbUser) {
+        token.id = dbUser.id;
+        token.name = dbUser.name;
+        token.email = dbUser.email;
+        token.picture = dbUser.image;
+        token.phone = dbUser.phone; // <-- Agora o 'phone' é adicionado corretamente
+      }
+
       return token;
     },
+
+    // O callback 'session' agora receberá o 'phone' do token JWT
     async session({ session, token }) {
-      if (session.user && token.id) session.user.id = token.id as string;
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.name = token.name;
+        session.user.email = token.email;
+        session.user.image = token.picture;
+        session.user.phone = token.phone as string | null | undefined; // <-- Adicionado aqui
+      }
       return session;
     },
   },

@@ -154,7 +154,7 @@ const BookingItem = ({ booking }: BookingProps) => {
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button className="w-full" variant="destructive">
-                      Confirmar
+                      Cancelar
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
