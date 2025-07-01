@@ -7,7 +7,6 @@ import { z } from "zod";
 
 import { updatePhoneIfMissing } from "@/actions/get-number";
 
-// Seus componentes de UI
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -49,7 +48,7 @@ export function CompleteRegisterForm({ email }: { email: string }) {
       return;
     }
 
-    const phoneForBackend = `+55${maskedPhone.replace(/\D/g, "")}`;
+    const phoneForBackend = `55${maskedPhone.replace(/\D/g, "")}`;
 
     startTransition(async () => {
       try {

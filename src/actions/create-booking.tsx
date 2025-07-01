@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "../../generated/prisma";
+import { sendExternalMessage } from "./send-external-message";
 
 interface CreateBookingParams {
   serviceId: string;
@@ -26,9 +27,14 @@ type BookingWithDetails = Prisma.BookingGetPayload<{
         address: true;
       };
     };
+    user: {
+      select: {
+        phone: true;
+        name: true;
+      };
+    };
   };
 }>;
-
 interface CreateBookingResponse {
   success: boolean;
   booking?: BookingWithDetails;
@@ -104,7 +110,6 @@ export const createBooking = async ({
       };
     }
 
-    // Criar o agendamento
     const booking = await db.booking.create({
       data: {
         userId: userIdFromSession,
@@ -125,8 +130,39 @@ export const createBooking = async ({
             address: true,
           },
         },
+        user: {
+          select: {
+            phone: true,
+            name: true,
+          },
+        },
       },
     });
+
+    if (booking.user?.phone) {
+      const userPhoneNumber = booking.user.phone;
+      const serviceName = booking.service.name;
+      const barbershopName = booking.barbershop.name;
+      const formattedBookingDate = booking.date.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // === AQUI: Construindo a mensagem e chamando sendExternalMessage de forma simples ===
+      const messageToSend = `Agendamento Confirmado. Você marcou um ${serviceName} em ${barbershopName} na data de ${formattedBookingDate}.`;
+
+      await sendExternalMessage({
+        to: userPhoneNumber,
+        message: messageToSend,
+      });
+    } else {
+      console.warn(
+        `Usuário ${userIdFromSession} não possui telefone para envio de mensagem de confirmação.`,
+      );
+    }
 
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath("/bookings");
