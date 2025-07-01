@@ -151,8 +151,7 @@ export const createBooking = async ({
         minute: "2-digit",
       });
 
-      // === AQUI: Construindo a mensagem e chamando sendExternalMessage de forma simples ===
-      const messageToSend = `Agendamento Confirmado. Você marcou um ${serviceName} em ${barbershopName} na data de ${formattedBookingDate}.`;
+      const messageToSend = `Agendamento Confirmado. Você marcou um serviço de ${serviceName} em ${barbershopName} na data de ${formattedBookingDate}.`;
 
       await sendExternalMessage({
         to: userPhoneNumber,

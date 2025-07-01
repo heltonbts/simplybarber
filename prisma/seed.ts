@@ -1,24 +1,38 @@
-// prisma/seed.ts
-
-// Importa o PrismaClient do local de saída customizado
 import { PrismaClient, Prisma } from "../generated/prisma";
 
-// Instancia o cliente
 const prisma = new PrismaClient();
 
-// Seus dados de barbearias e serviços (não precisam mudar)
 const barbershopData = [
   {
     name: "Barbearia Vintage",
     address: "Rua da Barbearia, 123",
-    imageUrl: "https://utfs.io/f/c97a2dc9-cf62-468b-a851-bfd2bdde775f-16p.png",
+    imageUrl: "https://i.imgur.com/9F3G6mD.jpg",
+    phone: ["(11) 98765-4321"],
   },
   {
     name: "Corte & Estilo",
     address: "Avenida dos Cortes, 456",
-    imageUrl: "https://utfs.io/f/45331760-899c-4b4b-910e-e00babb6ed81-16q.png",
+    imageUrl: "https://i.imgur.com/2zP1aBn.jpg",
+    phone: ["(11) 98765-4322"],
   },
-  // ... resto dos seus dados de barbearia
+  {
+    name: "A Navalha Dourada",
+    address: "Praça Central, 789",
+    imageUrl: "https://i.imgur.com/Wx5kdEQ.jpg",
+    phone: ["(11) 98765-4323"],
+  },
+  {
+    name: "Barber Club",
+    address: "Travessa do Barbeiro, 101",
+    imageUrl: "https://i.imgur.com/4dT0LQR.jpg",
+    phone: ["(11) 98765-4324"],
+  },
+  {
+    name: "O Fio da Navalha",
+    address: "Rua das Tesouras, 202",
+    imageUrl: "https://i.imgur.com/l6sdtzY.jpg",
+    phone: ["(11) 98765-4325"],
+  },
 ];
 
 const servicesData = [
@@ -26,25 +40,44 @@ const servicesData = [
     name: "Corte de Cabelo",
     description: "Estilo personalizado com as últimas tendências.",
     price: "50.00",
-    imageUrl:
-      "https://utfs.io/f/0ddfbd26-a424-43a0-aaf3-c3f1dc6be6d1-1kgxo7.png",
+    imageUrl: "https://i.imgur.com/WtP1ftu.jpg",
   },
   {
     name: "Barba",
     description: "Modelagem completa para destacar sua masculinidade.",
     price: "40.00",
-    imageUrl:
-      "https://utfs.io/f/e6bdffb6-24a9-455b-aba3-903c2c2b5bde-1jo6tu.png",
+    imageUrl: "https://i.imgur.com/okG6HRk.jpg",
   },
-  // ... resto dos seus dados de serviço
+  {
+    name: "Cabelo e Barba",
+    description: "Combo completo: corte de cabelo e barba modelada.",
+    price: "80.00",
+    imageUrl: "https://i.imgur.com/VXbSPbw.jpg",
+  },
+  {
+    name: "Limpeza de Pele",
+    description: "Remoção de impurezas e hidratação facial.",
+    price: "60.00",
+    imageUrl: "https://i.imgur.com/9TSiWqY.jpg",
+  },
+  {
+    name: "Massagem Capilar",
+    description: "Relaxamento e estímulo do couro cabeludo.",
+    price: "30.00",
+    imageUrl: "https://i.imgur.com/RzWGgdb.jpg",
+  },
+  {
+    name: "Alisamento",
+    description: "Tratamento para cabelo liso e sem frizz.",
+    price: "120.00",
+    imageUrl: "https://i.imgur.com/En0nXvK.jpg",
+  },
 ];
 
 async function main() {
   console.log("Iniciando o processo de seed...");
 
   try {
-    // 1. ORDEM CORRETA DE LIMPEZA DE DADOS
-    // Limpa os "filhos" antes dos "pais" para não quebrar as constraints do banco
     console.log("Limpando dados antigos...");
     await prisma.booking.deleteMany();
     await prisma.barbershopService.deleteMany();
@@ -52,18 +85,20 @@ async function main() {
     await prisma.user.deleteMany();
     console.log("Dados antigos limpos com sucesso.");
 
-    // 2. CRIAR UM USUÁRIO PARA SER O DONO DAS BARBEARIAS
     console.log("Criando usuário dono...");
+    // Se você tiver um campo 'password' no seu User, e quiser um hash:
+    // const hashedPassword = await hash('suaSenhaSeguraAqui', 10);
     const ownerUser = await prisma.user.create({
       data: {
         name: "Admin FSW",
         email: "admin@fswbarber.com",
+        // password: hashedPassword, // Descomente se tiver senha
+        phone: "5588999999999", // Telefone de exemplo para o admin
       },
     });
     console.log(`Usuário dono criado com ID: ${ownerUser.id}`);
 
-    // 3. CRIAR AS BARBEARIAS E CONECTÁ-LAS AO DONO
-    console.log("Criando novas barbearias e serviços...");
+    console.log("Criando novas barbearias e seus serviços...");
     for (const shop of barbershopData) {
       const barbershop = await prisma.barbershop.create({
         data: {
@@ -72,21 +107,15 @@ async function main() {
           imageUrl: shop.imageUrl,
           description:
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam euismod, nisl eget aliquam ultricies, nunc nisl aliquet nunc, quis aliquam nisl nisl eu nisl.",
-          phone: ["(11) 98765-4321"],
-
-          // ==========================================================
-          // A MUDANÇA MAIS IMPORTANTE ESTÁ AQUI
-          // Conectamos a barbearia que está sendo criada ao usuário 'dono'
+          phone: shop.phone,
           owner: {
             connect: {
               id: ownerUser.id,
             },
           },
-          // ==========================================================
         },
       });
 
-      // Criar os serviços para cada barbearia (sua lógica aqui está ótima)
       for (const service of servicesData) {
         await prisma.barbershopService.create({
           data: {
@@ -98,14 +127,15 @@ async function main() {
           },
         });
       }
+      console.log(`Barbearia "${barbershop.name}" e seus serviços criados.`);
     }
 
-    // 4. (BÔNUS) CRIAR UM CLIENTE E UM AGENDAMENTO DE EXEMPLO
     console.log("Criando dados de exemplo para agendamento...");
     const clientUser = await prisma.user.create({
       data: {
         name: "Miguel Cliente",
         email: "miguel@cliente.com",
+        phone: "55889981412297", // Telefone do cliente de teste
       },
     });
 
@@ -123,6 +153,11 @@ async function main() {
           date: new Date("2025-07-15T10:00:00.000Z"),
         },
       });
+      console.log("Agendamento de exemplo criado.");
+    } else {
+      console.log(
+        "Não foi possível criar agendamento de exemplo (barbearia/serviço/cliente não encontrados).",
+      );
     }
 
     console.log("Seed executado com sucesso!");
@@ -135,5 +170,4 @@ async function main() {
   }
 }
 
-// Executa a função principal
 main();

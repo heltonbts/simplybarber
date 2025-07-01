@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        hostname: "utfs.io",
+        protocol: "https",
+        hostname: "i.imgur.com",
       },
     ],
   },
