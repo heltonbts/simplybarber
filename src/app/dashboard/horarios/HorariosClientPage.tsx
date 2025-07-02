@@ -19,6 +19,8 @@ import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 
+import { saveWorkingHours } from "@/actions/save-working-hours"; // Certifique-se de que este import está correto
+
 import type { WorkingHour } from "./page";
 
 const diasDaSemanaDisplay = [
@@ -119,7 +121,20 @@ export default function HorariosClientPage({
       return;
     }
 
+    setIsLoading(true);
     try {
+      const dataToSave = workingHours.map((hour) => ({
+        ...hour,
+        openTime: hour.isOpen ? hour.openTime : "00:00",
+        closeTime: hour.isOpen ? hour.closeTime : "00:00",
+        lunchStart: hour.isOpen ? hour.lunchStart || null : null,
+        lunchEnd: hour.isOpen ? hour.lunchEnd || null : null,
+      }));
+
+      await saveWorkingHours(dataToSave as WorkingHour[]);
+
+      toast.success("Horários salvos com sucesso!");
+      setIsEditing(false);
     } catch (error: unknown) {
       console.error("Erro ao salvar horários:", error);
 
