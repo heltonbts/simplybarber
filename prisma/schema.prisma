@@ -22,6 +22,33 @@ model User {
   Authenticator    Authenticator[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  Barber           Barber[]
+}
+
+model Barber {
+  id           String     @id @default(uuid())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  barbershopId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([userId, barbershopId])
+}
+
+model BarbershopWorkingHour {
+  id           String     @id @default(uuid())
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  barbershopId String
+  weekDay      Int // 0 (domingo) a 6 (sábado)
+  isOpen       Boolean    @default(true)
+  openTime     String
+  closeTime    String
+  lunchStart   String?
+  lunchEnd     String?
+
+  @@unique([barbershopId, weekDay])
 }
 
 model Account {
@@ -79,18 +106,20 @@ model Authenticator {
 }
 
 model Barbershop {
-  id          String              @id @default(uuid())
-  name        String
-  address     String
-  phone       String[]
-  description String
-  imageUrl    String
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  owner       User                @relation("BarbershopOwner", fields: [ownerId], references: [id])
-  ownerId     String
-  services    BarbershopService[]
-  bookings    Booking[]
+  id                    String                  @id @default(uuid())
+  name                  String
+  address               String
+  phone                 String[]
+  description           String
+  imageUrl              String
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  owner                 User                    @relation("BarbershopOwner", fields: [ownerId], references: [id])
+  ownerId               String
+  services              BarbershopService[]
+  bookings              Booking[]
+  Barber                Barber[]
+  BarbershopWorkingHour BarbershopWorkingHour[]
 }
 
 model BarbershopService {

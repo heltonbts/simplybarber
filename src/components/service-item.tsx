@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { format, isPast, set } from "date-fns";
 import { createBooking } from "@/actions/create-booking";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import { getBooking } from "@/actions/get-booking";
 
 interface ServiceItemProps {
@@ -52,6 +52,10 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
     undefined,
   );
 
+  const loginWithGoogle = async () => {
+    await signIn("google");
+  };
+
   const handleDaySelected = (date: Date | undefined) => {
     setSelectedDay(date);
   };
@@ -73,7 +77,12 @@ const ServiceItem = ({ service, barbershop }: ServiceItemProps) => {
       });
 
       if (status !== "authenticated" || !sessionData?.user?.id) {
-        toast.error("Você precisa estar logado para fazer uma reserva.");
+        toast("Faça login para reservar", {
+          action: {
+            label: "Login",
+            onClick: loginWithGoogle,
+          },
+        });
         console.error("Tentativa de reserva sem usuário autenticado.");
         return;
       }

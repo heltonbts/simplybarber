@@ -45,7 +45,7 @@ export default function RootLayout({
                 </Card>
               </footer>
             </div>
-            <Toaster />
+            <Toaster richColors />
           </PhoneVerificationWrapper>
         </AuthProvider>
       </body>

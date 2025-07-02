@@ -18,6 +18,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { Sidebar } from "@/components/dashboard/sidebar";
+
 const DashboardPage = async () => {
   const session = await getServerSession(authOptions);
 
@@ -52,16 +54,19 @@ const DashboardPage = async () => {
   ]);
 
   if (!barbershop) {
-    redirect("/dashboard/my-shop/new");
+    redirect("/");
   }
 
   return (
     <div className="p-4 sm:p-8 space-y-8">
-      <header>
-        <h2 className="text-3xl font-bold text-white">Visão Geral</h2>
-        <p className="text-gray-400 capitalize">
-          {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
-        </p>
+      <header className="flex justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-white">Visão Geral</h2>
+          <p className="text-gray-400 capitalize">
+            {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+          </p>
+        </div>
+        <Sidebar />
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
