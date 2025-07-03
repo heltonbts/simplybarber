@@ -64,11 +64,14 @@ export type BookingForDisplay = {
   };
 };
 
+// ✅ Definindo os tipos corretos para Next.js 15+
+interface AgendamentosPageProps {
+  searchParams?: Promise<{ date?: string }>;
+}
+
 export default async function AgendamentosPageServer({
-  searchParams, // Parâmetros de busca da URL (ex: ?date=YYYY-MM-DD)
-}: {
-  searchParams?: { date?: string };
-}) {
+  searchParams,
+}: AgendamentosPageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
@@ -96,9 +99,12 @@ export default async function AgendamentosPageServer({
     );
   }
 
+  // ✅ Aguardando a Promise dos searchParams
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+
   // Define a data atual como padrão se nenhuma data for fornecida nos searchParams
-  const selectedDateParam = searchParams?.date
-    ? new Date(searchParams.date)
+  const selectedDateParam = resolvedSearchParams?.date
+    ? new Date(resolvedSearchParams.date)
     : new Date();
 
   // Garante que selectedDateParam seja uma data válida, caso contrário, usa a data atual
