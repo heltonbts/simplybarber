@@ -1,29 +1,41 @@
-// app/barbershops/[id]/page.tsx
 import { db } from "@/lib/prisma";
-import Image from "next/image"; // Continue usando next/image
+import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeftIcon, MapPinIcon, StarIcon } from "lucide-react";
 
 import Contact from "@/components/contact";
 import ServiceItem from "@/components/service-item";
 import Sidebar from "@/components/sidebar";
-
-import type {
-  // Importa os tipos necessários
-  BarberForBookings,
-  BarbershopWorkingHourForBookings,
-} from "@/app/dashboard/agendamentos/page";
-
 import { Button } from "@/components/ui/button";
 
-export default async function BarbershopPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  // Type props inline directly
+// ✅ Tipos definidos localmente
+type BarberForBookings = {
+  id: string;
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    image: string | null;
+  };
+};
 
-  const { id } = params;
+type BarbershopWorkingHourForBookings = {
+  weekDay: number;
+  isOpen: boolean;
+  openTime: string;
+  closeTime: string;
+  lunchStart: string | null;
+  lunchEnd: string | null;
+};
+
+// ✅ Definindo os tipos corretos para Next.js 15+
+interface BarbershopPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function BarbershopPage({ params }: BarbershopPageProps) {
+  // ✅ Aguardando a Promise dos params
+  const { id } = await params;
 
   const barbershop = await db.barbershop.findUnique({
     where: { id },
@@ -62,15 +74,15 @@ export default async function BarbershopPage({
   );
 
   const barbershopWorkingHours: BarbershopWorkingHourForBookings[] =
-    barbershop.BarbershopWorkingHour;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    barbershop.BarbershopWorkingHour as any;
 
   return (
     <div>
       <div className="relative h-[250px] w-full">
-        {/* Usando o componente Image do next/image para otimização */}
         <Image
-          src={barbershop?.imageUrl}
-          alt={barbershop?.name}
+          src={barbershop.imageUrl}
+          alt={barbershop.name}
           fill
           className="object-cover"
         />
@@ -90,11 +102,12 @@ export default async function BarbershopPage({
           <Sidebar variant="secondary" />
         </div>
       </div>
+
       <div className="p-5 border-b border-solid">
-        <h1 className="font-bold text-xl mb-3">{barbershop?.name}</h1>
+        <h1 className="font-bold text-xl mb-3">{barbershop.name}</h1>
         <div className="flex items-center gap-1 mb-2">
           <MapPinIcon className="text-primary" size={18} />
-          <p className="text-sm">{barbershop?.address}</p>
+          <p className="text-sm">{barbershop.address}</p>
         </div>
         <div className="flex items-center gap-1">
           <StarIcon className="text-primary" size={18} />
@@ -104,15 +117,15 @@ export default async function BarbershopPage({
 
       <div className="p-5 border-b border-solid space-y-3">
         <h2 className="font-bold uppercase text-xs text-gray-400">Sobre nós</h2>
-        <p className="text-justify">{barbershop?.description}</p>
+        <p className="text-justify">{barbershop.description}</p>
       </div>
 
       <div className="p-5 border-b border-solid">
         <h2 className="font-bold uppercase text-xs text-gray-400 mb-3">
           Serviços
         </h2>
-        <div className="space-y-3 ">
-          {barbershop?.services.map((service) => (
+        <div className="space-y-3">
+          {barbershop.services.map((service) => (
             <ServiceItem
               key={service.id}
               service={service}
