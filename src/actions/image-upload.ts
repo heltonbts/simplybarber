@@ -14,7 +14,7 @@ export async function uploadImage(formData: FormData) {
     throw new Error("O arquivo enviado não é uma imagem válida.");
   }
 
-  const MAX_FILE_SIZE = 5 * 1024 * 1024;
+  const MAX_FILE_SIZE = 30 * 1024 * 1024;
   if (file.size > MAX_FILE_SIZE) {
     throw new Error(
       `O arquivo é muito grande. Tamanho máximo permitido: ${MAX_FILE_SIZE / (1024 * 1024)}MB.`,
