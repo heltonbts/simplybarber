@@ -33,6 +33,7 @@ model Barber {
   barbershopId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  bookings     Booking[]
 
   @@unique([userId, barbershopId])
 }
@@ -130,7 +131,7 @@ model BarbershopService {
   description       String
   price             Decimal    @db.Decimal(10, 2)
   imageUrl          String
-  durationInMinutes Int        @default(30)
+  durationInMinutes Int
   bookings          Booking[]
 }
 
@@ -139,10 +140,18 @@ model Booking {
   date         DateTime
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
-  user         User              @relation("ClientBookings", fields: [userId], references: [id])
-  userId       String
+  user         User?             @relation("ClientBookings", fields: [userId], references: [id])
+  userId       String?
   service      BarbershopService @relation(fields: [serviceId], references: [id])
   serviceId    String
   barbershop   Barbershop        @relation(fields: [barbershopId], references: [id])
   barbershopId String
+  clientName   String?
+  clientPhone  String?
+  notes        String?
+
+  barber   Barber @relation(fields: [barberId], references: [id])
+  barberId String
+
+  @@unique([barberId, date])
 }

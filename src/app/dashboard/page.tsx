@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 
 import { Sidebar } from "@/components/dashboard/sidebar";
+import { UserIcon } from "lucide-react";
 
 const DashboardPage = async () => {
   const session = await getServerSession(authOptions);
@@ -117,14 +118,32 @@ const DashboardPage = async () => {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={booking.user.image ?? undefined} />
+                          <AvatarImage
+                            src={booking.user?.image || undefined}
+                            alt={
+                              booking.user?.name ||
+                              booking.clientName ||
+                              "Cliente"
+                            }
+                          />
                           <AvatarFallback>
-                            {booking.user.name?.charAt(0).toUpperCase()}
+                            {booking.user?.name ? (
+                              booking.user.name.charAt(0).toUpperCase()
+                            ) : booking.clientName ? (
+                              booking.clientName.charAt(0).toUpperCase()
+                            ) : (
+                              <UserIcon className="h-5 w-5 text-muted-foreground" />
+                            )}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="font-medium text-white">
-                          {booking.user.name}
-                        </span>
+                        <div>
+                          <p className="font-semibold text-white">
+                            {booking.user?.name ||
+                              booking.clientName ||
+                              "Cliente (manual)"}
+                          </p>
+                          {/* ... (resto do conteúdo do agendamento) */}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>{format(booking.date, "HH:mm")}</TableCell>
