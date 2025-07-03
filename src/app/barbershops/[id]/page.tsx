@@ -1,6 +1,6 @@
 // app/barbershops/[id]/page.tsx
 import { db } from "@/lib/prisma";
-import Image from "next/image";
+import Image from "next/image"; // Continue usando next/image
 import Link from "next/link";
 import { ChevronLeftIcon, MapPinIcon, StarIcon } from "lucide-react";
 
@@ -8,37 +8,30 @@ import Contact from "@/components/contact";
 import ServiceItem from "@/components/service-item";
 import Sidebar from "@/components/sidebar";
 
-// Importar os tipos necessários diretamente de onde eles são definidos
-// Ou defina-os aqui se forem usados apenas nesta página
 import type {
-  // Importa os tipos BarberForBookings e BarbershopWorkingHourForBookings
+  // Importa os tipos necessários
   BarberForBookings,
   BarbershopWorkingHourForBookings,
-} from "@/app/dashboard/agendamentos/page"; // Ajuste o caminho se eles estiverem em outro lugar
+} from "@/app/dashboard/agendamentos/page";
 
 import { Button } from "@/components/ui/button";
 
-// === CORREÇÃO AQUI: Definir o tipo diretamente e sem ambiguidade ===
-interface BarbershopPageProps {
-  // Use um nome de interface único para evitar conflitos
+export default async function BarbershopPage({
+  params,
+}: {
   params: { id: string };
-  // searchParams?: { [key: string]: string | string[] | undefined }; // Opcional, se você usar searchParams
-}
+}) {
+  // Type props inline directly
 
-export default async function BarbershopPage({ params }: BarbershopPageProps) {
-  // Use o novo tipo
   const { id } = params;
 
-  // Adicionar includes para Barbers e BarbershopWorkingHour
   const barbershop = await db.barbershop.findUnique({
     where: { id },
     include: {
       services: true,
       Barber: {
-        // Incluir os barbeiros
         include: {
           user: {
-            // Incluir os dados do usuário associado ao barbeiro
             select: {
               id: true,
               name: true,
@@ -48,7 +41,7 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
           },
         },
       },
-      BarbershopWorkingHour: true, // Incluir os horários de funcionamento da barbearia
+      BarbershopWorkingHour: true,
     },
   });
 
@@ -56,7 +49,6 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
     return <div>Barbearia não encontrada.</div>;
   }
 
-  // Adaptar os dados dos barbeiros para o tipo esperado pelo ServiceItem
   const adaptedBarbers: BarberForBookings[] = barbershop.Barber.map(
     (barber) => ({
       id: barber.id,
@@ -69,13 +61,13 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
     }),
   );
 
-  // O BarbershopWorkingHour já vem no formato correto, mas garantimos o tipo
   const barbershopWorkingHours: BarbershopWorkingHourForBookings[] =
     barbershop.BarbershopWorkingHour;
 
   return (
     <div>
       <div className="relative h-[250px] w-full">
+        {/* Usando o componente Image do next/image para otimização */}
         <Image
           src={barbershop?.imageUrl}
           alt={barbershop?.name}
