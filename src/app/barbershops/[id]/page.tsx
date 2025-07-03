@@ -7,12 +7,19 @@ import { ChevronLeftIcon, MapPinIcon, StarIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
+// Importar os tipos necessários do arquivo de agendamentos/page.tsx
+// Ajuste o caminho conforme a sua estrutura de pastas
+import type {
+  BarberForBookings,
+  BarbershopWorkingHourForBookings,
+} from "@/app/dashboard/agendamentos/page";
+
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: { id: string }; // Use 'params: { id: string }' diretamente, sem Promise
 }
 
 export default async function BarbershopPage({ params }: PageProps) {
-  const { id } = await params;
+  const { id } = params; // Acesse 'id' diretamente de params
 
   const barbershop = await db.barbershop.findUnique({
     where: {
@@ -20,12 +27,44 @@ export default async function BarbershopPage({ params }: PageProps) {
     },
     include: {
       services: true,
+      Barber: {
+        // Incluir os barbeiros
+        include: {
+          user: {
+            // Incluir os dados do usuário associado ao barbeiro
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+        },
+      },
+      BarbershopWorkingHour: true, // Incluir os horários de funcionamento da barbearia
     },
   });
 
   if (!barbershop) {
     return <div>Barbershop not found</div>;
   }
+
+  // Adaptar os dados dos barbeiros para o tipo esperado pelo ServiceItem
+  const adaptedBarbers: BarberForBookings[] = barbershop.Barber.map(
+    (barber) => ({
+      id: barber.id,
+      user: {
+        id: barber.user.id,
+        name: barber.user.name,
+        email: barber.user.email,
+        image: barber.user.image,
+      },
+    }),
+  );
+
+  // O BarbershopWorkingHour já vem no formato correto, mas garantimos o tipo
+  const barbershopWorkingHours: BarbershopWorkingHourForBookings[] =
+    barbershop.BarbershopWorkingHour;
 
   return (
     <div>
@@ -77,9 +116,10 @@ export default async function BarbershopPage({ params }: PageProps) {
           {barbershop?.services.map((service) => (
             <ServiceItem
               key={service.id}
-              barbershop={barbershop}
               service={service}
-              userId={barbershop.ownerId}
+              barbershop={barbershop}
+              availableBarbers={adaptedBarbers} // <-- Agora passando os barbeiros
+              barbershopWorkingHours={barbershopWorkingHours} // <-- Agora passando os horários de funcionamento
             />
           ))}
         </div>

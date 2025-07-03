@@ -13,6 +13,7 @@ import {
   isBefore,
   isAfter,
   isEqual,
+  startOfMinute,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -71,9 +72,9 @@ export interface CreateBookingResult {
 
 export async function getAvailableTimeSlots(
   barbershopId: string,
-  selectedDate: Date,
-  serviceId: string,
-  barberId: string,
+  selectedDate: Date, // A data COMPLETA (incluindo hora 00:00:00 para o dia)
+  serviceId: string, // Passamos o serviceId para obter a duração
+  barberId: string, // Passamos o barberId para filtrar os agendamentos
 ): Promise<string[]> {
   if (!barbershopId || !selectedDate || !serviceId || !barberId) {
     console.error("getAvailableTimeSlots: Parâmetros incompletos.");
@@ -109,7 +110,7 @@ export async function getAvailableTimeSlots(
   });
 
   if (!barbershopWorkingHour || !barbershopWorkingHour.isOpen) {
-    return [];
+    return []; // Barbearia fechada neste dia
   }
 
   const [openHour, openMinute] = barbershopWorkingHour.openTime
@@ -119,49 +120,63 @@ export async function getAvailableTimeSlots(
     .split(":")
     .map(Number);
 
-  const startOfWorkDay = setMinutes(
-    setHours(validatedDate, openHour),
-    openMinute,
+  // Normaliza todas as datas para o início do minuto para evitar problemas com milissegundos
+  const startOfWorkDay = startOfMinute(
+    setMinutes(setHours(validatedDate, openHour), openMinute),
   );
-  const endOfWorkDay = setMinutes(
-    setHours(validatedDate, closeHour),
-    closeMinute,
+  const endOfWorkDay = startOfMinute(
+    setMinutes(setHours(validatedDate, closeHour), closeMinute),
   );
 
+  // Obter agendamentos existentes para o barbeiro na data selecionada
+  // Usar lte no `date` do `where` para ser inclusivo até o final do expediente.
   const existingBookings = await db.booking.findMany({
     where: {
       barberId,
       barbershopId,
       date: {
         gte: startOfWorkDay,
-        lt: addMinutes(endOfWorkDay, service.durationInMinutes),
+        lte: addMinutes(endOfWorkDay, service.durationInMinutes), // Inclui agendamentos que terminam no final do dia
       },
     },
     include: { service: { select: { durationInMinutes: true } } },
   });
 
   const availableSlots: string[] = [];
-  let currentTime = startOfWorkDay;
+  let currentTime = startOfWorkDay; // Começa normalizado
+
+  const now = new Date(); // Hora atual para comparar e não mostrar slots no passado
+  const nowNormalized = startOfMinute(now); // Normaliza a hora atual
 
   while (
     isBefore(currentTime, endOfWorkDay) ||
     isEqual(currentTime, endOfWorkDay)
   ) {
-    const potentialSlotEnd = addMinutes(currentTime, service.durationInMinutes);
+    const potentialSlotEnd = startOfMinute(
+      addMinutes(currentTime, service.durationInMinutes),
+    ); // Normaliza o fim do slot
 
+    // 1. Condições de Saída Antecipada / Pulo de Horário Passado
     if (
       isAfter(potentialSlotEnd, endOfWorkDay) &&
       !isEqual(potentialSlotEnd, endOfWorkDay)
     ) {
-      break;
+      break; // Slot ultrapassa o fim do expediente
     }
-    if (isBefore(potentialSlotEnd, new Date())) {
-      currentTime = addMinutes(currentTime, service.durationInMinutes);
+    if (isBefore(potentialSlotEnd, nowNormalized)) {
+      // Slot já está no passado (considerando a duração)
+      currentTime = addMinutes(potentialSlotEnd, 1); // Pula para 1 minuto após o fim do slot passado
       continue;
     }
 
     let isBlocked = false;
+    let nextPotentialAdvanceTime = addMinutes(
+      currentTime,
+      service.durationInMinutes,
+    );
 
+    // 2. Verificar intervalo de almoço/pausa da barbearia
+    // === CORREÇÃO AQUI: USAR 'barbershopWorkingHour' EM VEZ DE 'workingHour' ===
     if (barbershopWorkingHour.lunchStart && barbershopWorkingHour.lunchEnd) {
       const [lunchStartHour, lunchStartMinute] =
         barbershopWorkingHour.lunchStart.split(":").map(Number);
@@ -169,13 +184,11 @@ export async function getAvailableTimeSlots(
         .split(":")
         .map(Number);
 
-      const lunchStart = setMinutes(
-        setHours(validatedDate, lunchStartHour),
-        lunchStartMinute,
+      const lunchStart = startOfMinute(
+        setMinutes(setHours(validatedDate, lunchStartHour), lunchStartMinute),
       );
-      const lunchEnd = setMinutes(
-        setHours(validatedDate, lunchEndHour),
-        lunchEndMinute,
+      const lunchEnd = startOfMinute(
+        setMinutes(setHours(validatedDate, lunchEndHour), lunchEndMinute),
       );
 
       const overlapsLunch =
@@ -185,24 +198,26 @@ export async function getAvailableTimeSlots(
         isEqual(potentialSlotEnd, lunchEnd);
 
       if (overlapsLunch) {
-        if (
-          isBefore(currentTime, lunchStart) &&
-          isAfter(potentialSlotEnd, lunchStart)
-        ) {
-          currentTime = lunchEnd;
-        }
         isBlocked = true;
+        if (
+          isBefore(currentTime, lunchEnd) &&
+          !isEqual(currentTime, lunchEnd)
+        ) {
+          nextPotentialAdvanceTime = lunchEnd;
+        }
       }
     }
 
+    // 3. Verificar sobreposição com agendamentos existentes para ESTE BARBEIRO
     if (!isBlocked) {
+      // Só verifica agendamentos se não estiver bloqueado pelo almoço
       for (const existingBooking of existingBookings) {
-        const bookingStart = existingBooking.date;
-        const bookingEnd = addMinutes(
-          bookingStart,
-          existingBooking.service.durationInMinutes,
-        );
+        const bookingStart = startOfMinute(existingBooking.date); // Normaliza o início do booking do DB
+        const bookingEnd = startOfMinute(
+          addMinutes(bookingStart, existingBooking.service.durationInMinutes),
+        ); // Normaliza o fim do booking do DB
 
+        // Checa se o slot potencial colide com um agendamento existente
         const collision =
           (isBefore(currentTime, bookingEnd) &&
             isAfter(potentialSlotEnd, bookingStart)) ||
@@ -211,17 +226,20 @@ export async function getAvailableTimeSlots(
 
         if (collision) {
           isBlocked = true;
-          currentTime = bookingEnd;
+          // Se há colisão, o próximo ponto de verificação deve ser APÓS o agendamento existente
+          nextPotentialAdvanceTime = bookingEnd;
           break;
         }
       }
     }
 
+    // 4. Decidir o que fazer: adicionar slot ou avançar o tempo
     if (!isBlocked) {
       availableSlots.push(format(currentTime, "HH:mm"));
-      currentTime = addMinutes(currentTime, service.durationInMinutes);
+      currentTime = nextPotentialAdvanceTime; // Avança pelo service.durationInMinutes
     } else {
-      currentTime = addMinutes(currentTime, 15);
+      // Se o slot estava bloqueado, avança o currentTime para o ponto calculado (fim do almoço/booking)
+      currentTime = nextPotentialAdvanceTime;
     }
   }
 

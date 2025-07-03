@@ -3,7 +3,6 @@ import { db } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import BookingsClientPage from "./BookingsClientPage";
-import DailyScheduleView from "@/components/dashboard/DailyScheduleView"; // Importe o componente cliente que criaremos a seguir
 import { startOfDay, endOfDay } from "date-fns"; // Para filtrar agendamentos do dia
 
 // Tipos para os dados que serão passados para o componente cliente
@@ -52,6 +51,7 @@ export type BookingForDisplay = {
   user: {
     name: string | null;
     email: string;
+    image: string | null;
   } | null; // Pode ser null para agendamentos manuais
   service: {
     name: string;
@@ -144,7 +144,7 @@ export default async function AgendamentosPageServer({
           },
         },
         include: {
-          user: { select: { name: true, email: true } }, // Para agendamentos de usuários registrados
+          user: { select: { name: true, email: true, image: true } }, // Para agendamentos de usuários registrados
           service: { select: { name: true, durationInMinutes: true } }, // Nome e duração do serviço
           barber: { select: { user: { select: { name: true } } } }, // Nome do barbeiro associado
         },
@@ -167,7 +167,6 @@ export default async function AgendamentosPageServer({
       image: b.user.image,
     },
   }));
-
   const adaptedBookings: BookingForDisplay[] = bookingsForSelectedDay.map(
     (b) => ({
       id: b.id,
@@ -178,7 +177,13 @@ export default async function AgendamentosPageServer({
       clientName: b.clientName,
       clientPhone: b.clientPhone,
       notes: b.notes,
-      user: b.user ? { name: b.user.name, email: b.user.email } : null,
+      user: b.user
+        ? {
+            name: b.user.name,
+            email: b.user.email,
+            image: b.user.image ?? null,
+          }
+        : null,
       service: {
         name: b.service.name,
         durationInMinutes: b.service.durationInMinutes,
@@ -187,28 +192,16 @@ export default async function AgendamentosPageServer({
     }),
   );
 
-  const selectedDayOfWeek = new Date(selectedDate).getDay(); // Obtém o dia da semana (0-6)
-  const currentDayWorkingHour =
-    barbershopWorkingHours.find((wh) => wh.weekDay === selectedDayOfWeek) ||
-    null;
-
   // Passa todos os dados para o componente cliente
   return (
-    <>
-      <BookingsClientPage
-        barbershopId={barbershop.id}
-        barbershopName={barbershop.name}
-        initialSelectedDate={selectedDate}
-        initialBarbers={adaptedBarbers}
-        initialServices={adaptedServices}
-        initialBarbershopWorkingHours={barbershopWorkingHours}
-        initialBookings={adaptedBookings}
-      />
-      <DailyScheduleView
-        selectedDate={selectedDate}
-        workingHour={currentDayWorkingHour} // Passa o horário do dia
-        bookings={adaptedBookings} // Passa os agendamentos já adaptados
-      />
-    </>
+    <BookingsClientPage
+      barbershopId={barbershop.id}
+      barbershopName={barbershop.name}
+      initialSelectedDate={selectedDate}
+      initialBarbers={adaptedBarbers}
+      initialServices={adaptedServices}
+      initialBarbershopWorkingHours={barbershopWorkingHours}
+      initialBookings={adaptedBookings}
+    />
   );
 }

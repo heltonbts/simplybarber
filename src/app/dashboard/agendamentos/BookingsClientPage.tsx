@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react"; // Adicionado useMemo
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -15,7 +16,7 @@ import {
   Calendar as CalendarIcon,
   Bookmark,
   CircleDot,
-  Image as FileText,
+  Image as FileText, // Renomeado para evitar conflito com Image do next/image
 } from "lucide-react";
 import {
   Card,
@@ -82,7 +83,7 @@ import {
   createBooking,
   deleteBooking,
   getAvailableTimeSlots,
-} from "@/actions/create-booking";
+} from "@/actions/create-booking"; // Caminho da server action de agendamentos
 
 import type {
   BarberForBookings,
@@ -91,6 +92,7 @@ import type {
   BookingForDisplay as BaseBookingForDisplay,
 } from "./page";
 
+// Exportando BookingForDisplay para garantir que a tipagem seja globalmente consistente
 export type BookingForDisplay = Omit<BaseBookingForDisplay, "user"> & {
   user: {
     name: string | null;
@@ -99,64 +101,68 @@ export type BookingForDisplay = Omit<BaseBookingForDisplay, "user"> & {
   } | null;
 };
 
+// Constantes para valores de placeholder/erro nos Selects
 const UNSELECTED_PLACEHOLDER_VALUE = "UNSELECTED";
 const LOADING_SLOTS_VALUE = "LOADING_SLOTS";
 const NO_SLOTS_AVAILABLE_VALUE = "NO_SLOTS_AVAILABLE";
 const NO_SERVICES_FOUND_VALUE = "NO_SERVICES_FOUND";
 const NO_BARBERS_FOUND_VALUE = "NO_BARBERS_FOUND";
 
-const createBookingFormSchema = z.object({
-  serviceId: z
-    .string()
-    .min(1, "Serviço é obrigatório.")
-    .refine((val) => val !== UNSELECTED_PLACEHOLDER_VALUE, {
-      message: "Selecione um serviço válido.",
-    }),
-  barberId: z
-    .string()
-    .min(1, "Barbeiro é obrigatório.")
-    .refine((val) => val !== UNSELECTED_PLACEHOLDER_VALUE, {
-      message: "Selecione um barbeiro válido.",
-    }),
-  date: z
-    .date({
-      required_error: "Data e hora do agendamento são obrigatórias.",
-      invalid_type_error: "Data e hora inválidas.",
-    })
-    .min(new Date(), "Não é possível agendar para uma data/hora no passado."),
-  time: z
-    .string()
-    .min(1, "Horário é obrigatório.")
-    .refine(
-      (val) =>
-        val !== UNSELECTED_PLACEHOLDER_VALUE &&
-        val !== LOADING_SLOTS_VALUE &&
-        val !== NO_SLOTS_AVAILABLE_VALUE,
-      {
-        message: "Selecione um horário válido.",
-      },
-    ),
+// 1. Simplificar Validações (Schema)
+const createBookingFormSchema = z
+  .object({
+    serviceId: z.string().min(1, "Selecione um serviço."), // Simples, mas o refine será necessário se o min(1) for satisfeito pelo placeholder
+    barberId: z.string().min(1, "Selecione um barbeiro."),
+    date: z
+      .date({
+        required_error: "Data é obrigatória.",
+        invalid_type_error: "Data inválida.",
+      })
+      .min(
+        new Date(new Date().setHours(0, 0, 0, 0)),
+        "Não é possível agendar para uma data no passado.",
+      ), // Normaliza a data para comparação
+    time: z.string().min(1, "Selecione um horário."),
 
-  clientName: z
-    .string()
-    .max(100, "Nome muito longo.")
-    .optional()
-    .or(z.literal("")),
-  clientPhone: z
-    .string()
-    .max(50, "Telefone muito longo.")
-    .refine((val) => val === "" || /^[0-9,\s\(\)\-+]+$/.test(val), {
-      message:
-        "Telefones inválidos. Use apenas números, vírgulas, espaços, '(', ')', '-' ou '+'.",
-    })
-    .optional()
-    .or(z.literal("")),
-  notes: z
-    .string()
-    .max(500, "Observações muito longas.")
-    .optional()
-    .or(z.literal("")),
-});
+    clientName: z
+      .string()
+      .max(100, "Nome muito longo.")
+      .optional()
+      .or(z.literal("")),
+    clientPhone: z
+      .string()
+      .max(50, "Telefone muito longo.")
+      .refine((val) => val === "" || /^[0-9,\s\(\)\-+]+$/.test(val), {
+        message:
+          "Telefones inválidos. Use apenas números, vírgulas, espaços, '(', ')', '-' ou '+'.",
+      })
+      .optional()
+      .or(z.literal("")),
+    notes: z
+      .string()
+      .max(500, "Observações muito longas.")
+      .optional()
+      .or(z.literal("")),
+  })
+  // 1.1 Refine final para garantir que placeholders não passem a validação
+  .refine((data) => data.serviceId !== UNSELECTED_PLACEHOLDER_VALUE, {
+    message: "Selecione um serviço válido.",
+    path: ["serviceId"],
+  })
+  .refine((data) => data.barberId !== UNSELECTED_PLACEHOLDER_VALUE, {
+    message: "Selecione um barbeiro válido.",
+    path: ["barberId"],
+  })
+  .refine(
+    (data) =>
+      data.time !== UNSELECTED_PLACEHOLDER_VALUE &&
+      data.time !== LOADING_SLOTS_VALUE &&
+      data.time !== NO_SLOTS_AVAILABLE_VALUE,
+    {
+      message: "Selecione um horário válido.",
+      path: ["time"],
+    },
+  );
 
 type CreateBookingFormInput = z.infer<typeof createBookingFormSchema>;
 
@@ -184,6 +190,8 @@ export default function BookingsClientPage({
   const [isSavingBooking, setIsSavingBooking] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [fetchingSlots, setFetchingSlots] = useState(false);
+  // 2. Gerenciamento de Estado Conflitante (ConfirmedBooking)
+  // O estado confirmedBooking é resetado no useEffect e handleCloseCreateBookingDialog
   const [confirmedBooking, setConfirmedBooking] =
     useState<BookingForDisplay | null>(null);
 
@@ -201,6 +209,7 @@ export default function BookingsClientPage({
     mode: "onBlur",
   });
 
+  // Sincroniza dados iniciais e reinicia o form para um estado limpo/placeholder
   useEffect(() => {
     setBookings(initialBookings);
     setSelectedDate(initialSelectedDate);
@@ -209,23 +218,32 @@ export default function BookingsClientPage({
     form.setValue("barberId", UNSELECTED_PLACEHOLDER_VALUE);
     form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
     setAvailableSlots([]);
-    setConfirmedBooking(null);
+    setConfirmedBooking(null); // Garante que a mensagem de confirmação seja limpa
   }, [initialBookings, initialSelectedDate, form]);
+
+  // 3. Otimizar useEffect para buscar slots
+  const watchedSlotDependencies = useMemo(
+    () => ({
+      // Agrupa as dependências observadas
+      serviceId: form.watch("serviceId"),
+      barberId: form.watch("barberId"),
+      date: form.watch("date"),
+    }),
+    [form],
+  ); // form é a única dependência para useMemo aqui
 
   useEffect(() => {
     const fetchSlots = async () => {
-      const serviceId = form.watch("serviceId");
-      const barberId = form.watch("barberId");
-      const date = form.watch("date");
+      const { serviceId, barberId, date } = watchedSlotDependencies; // Pega valores do useMemo
 
+      // Só busca se todos os campos essenciais estiverem selecionados E não forem valores de placeholder
       if (
-        serviceId &&
         serviceId !== UNSELECTED_PLACEHOLDER_VALUE &&
-        barberId &&
         barberId !== UNSELECTED_PLACEHOLDER_VALUE &&
         date
       ) {
         setFetchingSlots(true);
+        form.setValue("time", LOADING_SLOTS_VALUE); // Feedback visual para carregamento
         try {
           const dateOnly = new Date(
             date.getFullYear(),
@@ -239,30 +257,24 @@ export default function BookingsClientPage({
             barberId,
           );
           setAvailableSlots(slots);
-          form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+          form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE); // Reseta a seleção de horário após carregar slots
         } catch (error) {
           console.error("Erro ao buscar horários disponíveis:", error);
           toast.error("Falha ao carregar horários disponíveis.", {
             description: "Tente novamente.",
           });
           setAvailableSlots([]);
-          form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+          form.setValue("time", NO_SLOTS_AVAILABLE_VALUE); // Mostra que não há slots por erro
         } finally {
           setFetchingSlots(false);
         }
       } else {
         setAvailableSlots([]);
-        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE); // Zera se dependências não forem atendidas
       }
     };
     fetchSlots();
-  }, [
-    form.watch("serviceId"),
-    form.watch("barberId"),
-    form.watch("date"),
-    barbershopId,
-    form,
-  ]);
+  }, [watchedSlotDependencies, barbershopId, form]); // Usa o objeto memoizado como dependência
 
   const handleDateChange = (date: Date | undefined) => {
     if (date) {
@@ -271,8 +283,42 @@ export default function BookingsClientPage({
   };
 
   const handleCreateBookingSubmit = async (data: CreateBookingFormInput) => {
+    // 2. Verificar Estado dos Campos (Adicionar logs para debug)
+    console.log("handleCreateBookingSubmit: Função chamada!");
+    console.log("Dados do formulário validados (pelo Zod):", data);
+    console.log(
+      "Erros do formulário ANTES da Server Action:",
+      form.formState.errors,
+    );
+    console.log(
+      "Form is Valid ANTES da Server Action:",
+      form.formState.isValid,
+    );
+
+    // 5. Testar Isoladamente (Log adicional)
+    if (!form.formState.isValid) {
+      console.error("Formulário inválido, submissão abortada pelo RHF.");
+      toast.error("Preencha todos os campos obrigatórios corretamente.");
+      return; // Retorna se o formulário for inválido
+    }
+
+    // 5. Possível Fix Rápido (Verificação básica) - Zod já faz isso, mas para debug:
+    if (
+      !data.serviceId ||
+      data.serviceId === UNSELECTED_PLACEHOLDER_VALUE ||
+      !data.barberId ||
+      data.barberId === UNSELECTED_PLACEHOLDER_VALUE ||
+      !data.time ||
+      data.time === UNSELECTED_PLACEHOLDER_VALUE
+    ) {
+      toast.error("Preencha todos os campos obrigatórios.");
+      return;
+    }
+
     setIsSavingBooking(true);
+    console.log("setIsSavingBooking(true) chamado.");
     try {
+      console.log("Dentro do bloco try. Tentando criar agendamento...");
       const [hour, minute] = data.time.split(":").map(Number);
       const finalBookingDate = setMinutes(setHours(data.date, hour), minute);
 
@@ -290,37 +336,23 @@ export default function BookingsClientPage({
         toast.success("Agendamento criado com sucesso!");
         setConfirmedBooking({
           ...result.booking,
-          user:
-            result.booking.user &&
-            "email" in result.booking.user &&
-            typeof (result.booking.user as { email?: unknown }).email ===
-              "string"
-              ? {
-                  name:
-                    (result.booking.user as { name?: string | null }).name ??
-                    null,
-                  email: (result.booking.user as { email: string }).email,
-                  image:
-                    "image" in result.booking.user
-                      ? (result.booking.user as { image: string | null }).image
-                      : null,
-                }
-              : result.booking.user
-                ? {
-                    name:
-                      (result.booking.user as { name?: string | null }).name ??
-                      null,
-                    email: "",
-                    image: null,
-                  }
-                : null,
-        });
-        handleCloseCreateBookingDialog();
+          user: result.booking.user
+            ? {
+                name: result.booking.user.name,
+                email: (result.booking.user as any).email ?? "",
+                image: (result.booking.user as any).image ?? null,
+              }
+            : null,
+        }); // 5. Renderização condicional do agendamento confirmado
+        handleCloseCreateBookingDialog(); // Fecha o modal
       } else {
         toast.error("Falha ao agendar.", { description: result.error });
       }
     } catch (error: unknown) {
-      console.error("Erro ao criar agendamento:", error);
+      console.error(
+        "Erro capturado no bloco catch de handleCreateBookingSubmit:",
+        error,
+      );
       let errorMessage = "Ocorreu um erro inesperado ao criar o agendamento.";
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -329,13 +361,13 @@ export default function BookingsClientPage({
       }
       toast.error("Erro ao criar agendamento", { description: errorMessage });
     } finally {
+      console.log("Bloco finally executado.");
       setIsSavingBooking(false);
     }
   };
 
   const handleCloseCreateBookingDialog = () => {
     setIsCreateBookingDialogOpen(false);
-    // Limpa o formulário e reseta para valores padrão/placeholder
     form.reset({
       serviceId: UNSELECTED_PLACEHOLDER_VALUE,
       barberId: UNSELECTED_PLACEHOLDER_VALUE,
@@ -347,6 +379,7 @@ export default function BookingsClientPage({
     });
     form.clearErrors();
     setAvailableSlots([]);
+    setConfirmedBooking(null); // Garante que o feedback de confirmação seja resetado
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
@@ -362,7 +395,6 @@ export default function BookingsClientPage({
       const result = await deleteBooking(bookingId);
       if (result.success) {
         toast.success("Agendamento cancelado com sucesso!");
-        // O `useEffect` de sincronização de `initialBookings` se encarregará de atualizar a lista principal
       } else {
         toast.error("Falha ao cancelar agendamento.", {
           description: "Ocorreu um erro ao cancelar o agendamento.",
@@ -408,9 +440,7 @@ export default function BookingsClientPage({
           Voltar
         </Button>
       </Link>
-
       <Separator className="bg-white/10" />
-
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -447,9 +477,7 @@ export default function BookingsClientPage({
           </PopoverContent>
         </Popover>
       </div>
-
       <Separator className="bg-white/10" />
-
       <div className="flex justify-end">
         <Dialog
           open={isCreateBookingDialogOpen}
@@ -737,35 +765,45 @@ export default function BookingsClientPage({
           </DialogContent>
         </Dialog>
       </div>
-
-      <Separator className="bg-white/10" />
-
+            <Separator className="bg-white/10" />     {" "}
       <Card className="bg-card text-card-foreground border-border shadow-md">
+               {" "}
         <CardHeader>
+                   {" "}
           <CardTitle>
-            Agendamentos para{" "}
-            {format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+                        Agendamentos para            {" "}
+            {format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}         {" "}
           </CardTitle>
+                   {" "}
           <CardDescription>
-            Visualize e gerencie os agendamentos do dia.
+                        Visualize e gerencie os agendamentos do dia.        
+             {" "}
           </CardDescription>
+                 {" "}
         </CardHeader>
+               {" "}
         <CardContent>
+                   {" "}
           {bookings.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <XCircle className="w-8 h-8 mx-auto mb-2" />
-              <p>Nenhum agendamento para este dia.</p>
-              <p>Use o botão Adicionar Novo Agendamento para começar.</p>
+                            <XCircle className="w-8 h-8 mx-auto mb-2" />       
+                    <p>Nenhum agendamento para este dia.</p>             {" "}
+              <p>Use o botão Adicionar Novo Agendamento para começar.</p>       
+                 {" "}
             </div>
           ) : (
             <div className="space-y-4">
+                           {" "}
               {bookings.map((booking) => (
                 <div
                   key={booking.id}
                   className="flex items-center justify-between p-3 border border-border rounded-md bg-secondary/20"
                 >
+                                   {" "}
                   <div className="flex items-center gap-3">
+                                       {" "}
                     <Avatar>
+                                           {" "}
                       <AvatarImage
                         src={
                           booking.user?.image ||
@@ -782,7 +820,9 @@ export default function BookingsClientPage({
                           "Cliente"
                         }
                       />
+                                           {" "}
                       <AvatarFallback>
+                                               {" "}
                         {booking.user?.name ? (
                           booking.user.name.charAt(0).toUpperCase()
                         ) : booking.clientName ? (
@@ -792,95 +832,150 @@ export default function BookingsClientPage({
                         ) : (
                           <User className="h-4 w-4" />
                         )}
+                                             {" "}
                       </AvatarFallback>
+                                         {" "}
                     </Avatar>
+                                       {" "}
                     <div>
+                                           {" "}
                       <p className="font-semibold text-white">
+                                               {" "}
                         {booking.user?.name ||
                           booking.clientName ||
                           "Cliente (manual)"}
+                                             {" "}
                       </p>
+                                           {" "}
                       <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" />{" "}
-                        {format(booking.date, "HH:mm", { locale: ptBR })}
-                        {" - "}
+                                                <Clock className="w-3 h-3" />  
+                                             {" "}
+                        {format(booking.date, "HH:mm", { locale: ptBR })}       
+                                        {" - "}                       {" "}
                         <span className="font-medium text-primary">
-                          {booking.service.name}
+                                                    {booking.service.name}     
+                                           {" "}
                         </span>
+                                             {" "}
                       </p>
+                                           {" "}
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Users className="w-3 h-3" /> Barbeiro:{" "}
-                        {booking.barber.user.name || "Não definido"}
+                                                <Users className="w-3 h-3" />{" "}
+                        Barbeiro:                        {" "}
+                        {booking.barber.user.name || "Não definido"}           
+                                 {" "}
                       </p>
+                                           {" "}
                       {booking.notes && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <FileText className="w-3 h-3" /> Obs: {booking.notes}
+                                                   {" "}
+                          <FileText className="w-3 h-3" /> Obs: {booking.notes} 
+                                               {" "}
                         </p>
                       )}
+                                         {" "}
                     </div>
+                                     {" "}
                   </div>
+                                   {" "}
                   <AlertDialog>
+                                       {" "}
                     <AlertDialogTrigger asChild>
+                                           {" "}
                       <Button
                         variant="destructive"
                         size="icon"
                         disabled={isSavingBooking}
                       >
-                        <Trash2 className="h-4 w-4" />
+                                                <Trash2 className="h-4 w-4" /> 
+                                           {" "}
                       </Button>
+                                         {" "}
                     </AlertDialogTrigger>
+                                       {" "}
                     <AlertDialogContent className="bg-card text-card-foreground border-border">
+                                           {" "}
                       <AlertDialogHeader>
+                                               {" "}
                         <AlertDialogTitle>
-                          Cancelar Agendamento?
+                                                    Cancelar Agendamento?      
+                                           {" "}
                         </AlertDialogTitle>
+                                               {" "}
                         <AlertDialogDescription>
-                          Você está prestes a cancelar o agendamento de{" "}
+                                                    Você está prestes a cancelar
+                          o agendamento de                          {" "}
                           <span className="font-bold text-white">
+                                                       {" "}
                             {booking.user?.name ||
                               booking.clientName ||
                               "Cliente (manual)"}
+                                                     {" "}
                           </span>{" "}
-                          para o serviço de{" "}
+                                                    para o serviço de          
+                                         {" "}
                           <span className="font-bold text-white">
-                            {booking.service.name}
+                                                        {booking.service.name} 
+                                                   {" "}
                           </span>{" "}
-                          com{" "}
+                                                    com                        
+                           {" "}
                           <span className="font-bold text-white">
-                            {booking.barber.user.name || "o barbeiro"}
+                                                       {" "}
+                            {booking.barber.user.name || "o barbeiro"}         
+                                           {" "}
                           </span>{" "}
-                          às{" "}
+                                                    às                          {" "}
                           <span className="font-bold text-white">
-                            {format(booking.date, "HH:mm", { locale: ptBR })}
+                                                       {" "}
+                            {format(booking.date, "HH:mm", { locale: ptBR })}   
+                                                 {" "}
                           </span>{" "}
-                          em{" "}
+                                                    em                          {" "}
                           <span className="font-bold text-white">
+                                                       {" "}
                             {format(booking.date, "dd/MM/yyyy", {
                               locale: ptBR,
                             })}
+                                                     {" "}
                           </span>
-                          . Esta ação não pode ser desfeita.
+                                                    . Esta ação não pode ser
+                          desfeita.                        {" "}
                         </AlertDialogDescription>
+                                             {" "}
                       </AlertDialogHeader>
+                                           {" "}
                       <AlertDialogFooter>
+                                               {" "}
                         <AlertDialogCancel className="text-white border-border">
-                          Não, Manter
+                                                    Não, Manter                
+                                 {" "}
                         </AlertDialogCancel>
+                                               {" "}
                         <AlertDialogAction
                           onClick={() => handleDeleteBooking(booking.id)}
                           className="bg-red-500 hover:bg-red-600 text-white"
                         >
-                          Sim, Cancelar
+                                                    Sim, Cancelar              
+                                   {" "}
                         </AlertDialogAction>
+                                             {" "}
                       </AlertDialogFooter>
+                                         {" "}
                     </AlertDialogContent>
+                                     {" "}
                   </AlertDialog>
+                                 {" "}
                 </div>
               ))}
+                         {" "}
             </div>
           )}
+                 {" "}
         </CardContent>
+             {" "}
       </Card>
+         {" "}
     </div>
   );
 }
