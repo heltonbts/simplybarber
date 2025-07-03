@@ -36,7 +36,7 @@ import { createBooking, getAvailableTimeSlots } from "@/actions/create-booking";
 import type {
   BarberForBookings,
   BarbershopWorkingHourForBookings,
-} from "@/app/dashboard/agendamentos/page"; // Tipos de barbeiro/horários
+} from "@/app/dashboard/agendamentos/BookingsClientPage"; // Tipos de barbeiro/horários
 import { Label } from "@radix-ui/react-label";
 
 const UNSELECTED_PLACEHOLDER_VALUE = "UNSELECTED";
