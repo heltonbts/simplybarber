@@ -123,14 +123,15 @@ model Barbershop {
 }
 
 model BarbershopService {
-  id           String     @id @default(uuid())
-  barbershop   Barbershop @relation(fields: [barbershopId], references: [id])
-  barbershopId String
-  name         String
-  description  String
-  price        Decimal    @db.Decimal(10, 2)
-  imageUrl     String
-  bookings     Booking[]
+  id                String     @id @default(uuid())
+  barbershop        Barbershop @relation(fields: [barbershopId], references: [id])
+  barbershopId      String
+  name              String
+  description       String
+  price             Decimal    @db.Decimal(10, 2)
+  imageUrl          String
+  durationInMinutes Int        @default(30)
+  bookings          Booking[]
 }
 
 model Booking {

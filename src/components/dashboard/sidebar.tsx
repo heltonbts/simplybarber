@@ -10,12 +10,14 @@ import {
   Calendar,
   DollarSign,
   Settings,
+  Scissors,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Horários", href: "/dashboard/horarios", icon: Clock },
+  { label: "Serviços", href: "/dashboard/servicos", icon: Scissors },
   { label: "Barbeiros", href: "/dashboard/barbeiros", icon: Users },
   { label: "Agendamentos", href: "/dashboard/agendamentos", icon: Calendar },
   { label: "Financeiro", href: "/dashboard/financeiro", icon: DollarSign },
