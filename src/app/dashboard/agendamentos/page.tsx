@@ -1,75 +1,58 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getServerSession } from "next-auth";
+import { ChevronLeft } from "lucide-react";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/prisma";
+import { getBarbersByBarbershop } from "@/actions/barber-actions"; // Assumindo que você tem este arquivo
+import { getServicesByBarbershop } from "@/actions/ServiceActions"; // Assumindo que você tem este arquivo
+import { getBookingsByBarbershop } from "@/actions/create-booking";
+import { BookingManagementClient } from "@/components/dashboard/booking-management-client";
+import { buttonVariants } from "@/components/ui/button";
 
-import { getBarbersByBarbershop } from "@/actions/barber-actions";
-import { getServicesByBarbershop } from "@/actions/ServiceActions";
-
-import { ManualBookingForm } from "@/components/dashboard/manual-booking-form";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-
-export default async function ManualBookingPage() {
-  // 1. Validar a sessão do usuário
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user) {
-    // Se não estiver logado, redireciona para o login
+export default async function BookingManagementPage() {
+  const session = await getServerSession(authOptions); // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!session?.user || !(session.user as any).id) {
     redirect("/");
   }
 
-  // 2. Encontrar a barbearia pertencente ao usuário logado
-  // (Assumindo que um usuário gerencia apenas uma barbearia para simplificar)
   const barbershop = await db.barbershop.findFirst({
-    where: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ownerId: (session.user as any).id,
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: { ownerId: (session.user as any).id },
   });
 
   if (!barbershop) {
-    // Se o usuário não for dono de nenhuma barbearia, mostra uma mensagem
-    return (
-      <div className="p-6">
-        <Card className="max-w-md mx-auto">
-          <CardHeader>
-            <CardTitle>Nenhuma Barbearia Encontrada</CardTitle>
-            <CardDescription>
-              Você precisa ser o proprietário de uma barbearia para acessar esta
-              página.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p>
-              Por favor, cadastre sua barbearia ou entre em contato com o
-              suporte.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <p className="p-6">Barbearia não encontrada.</p>;
   }
 
-  // 3. Buscar os dados necessários no servidor
-  const [barbers, services] = await Promise.all([
+  const [barbers, services, bookings] = await Promise.all([
     getBarbersByBarbershop(barbershop.id),
     getServicesByBarbershop(barbershop.id),
+    getBookingsByBarbershop(barbershop.id),
   ]);
 
-  // 4. Renderizar o componente de cliente, passando os dados como props
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto">
-      <ManualBookingForm
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+           {" "}
+      <div className="mb-6">
+               {" "}
+        <Link
+          href="/dashboard"
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+                    <ChevronLeft className="h-4 w-4 mr-2" />          Voltar ao
+          Painel        {" "}
+        </Link>
+             {" "}
+      </div>
+           {" "}
+      <BookingManagementClient
         barbershopId={barbershop.id}
-        barbers={JSON.parse(JSON.stringify(barbers))}
-        services={JSON.parse(JSON.stringify(services))} // Serialização para evitar erros
+        initialBookings={bookings}
+        barbers={barbers}
+        services={services}
       />
+         {" "}
     </div>
   );
 }
