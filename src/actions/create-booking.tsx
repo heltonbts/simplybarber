@@ -18,7 +18,12 @@ import {
 import { ptBR } from "date-fns/locale";
 
 import { sendExternalMessage } from "./send-external-message";
-import { Prisma } from "../../generated/prisma";
+import {
+  Prisma,
+  Booking,
+  BarbershopService,
+  User,
+} from "../../generated/prisma";
 
 export interface CreateBookingInput {
   serviceId: string;
@@ -68,6 +73,111 @@ export interface CreateBookingResult {
   success: boolean;
   booking?: BookingResponseDetails;
   error?: string;
+}
+
+export type BarberWithUser = {
+  id: string;
+  user: User;
+};
+
+// Tipo completo para agendamento, usado na tabela de gerenciamento
+export type BookingDetails = Booking & {
+  service: BarbershopService;
+  barber: BarberWithUser;
+  user?: User | null; // IMPORTANTE: Adicionar o user aqui
+};
+
+// READ: Função para buscar todos os agendamentos da barbearia para a tabela - CORRIGIDA
+export async function getBookingsByBarbershop(
+  barbershopId: string,
+): Promise<BookingDetails[]> {
+  console.log("🔍 Debug - Buscando bookings para barbershop:", barbershopId);
+
+  if (!barbershopId) return [];
+
+  const bookings = await db.booking.findMany({
+    where: { barbershopId },
+    include: {
+      service: true,
+      barber: { include: { user: true } },
+      user: true, // IMPORTANTE: Incluir o user relacionado
+    },
+    orderBy: { date: "desc" },
+  });
+
+  console.log("🔍 Debug - Bookings encontrados:", bookings.length);
+
+  // Debug detalhado de cada booking
+  bookings.forEach((booking, index) => {
+    console.log(`🔍 Debug - Booking ${index + 1}:`, {
+      id: booking.id,
+      date: booking.date,
+      userId: booking.userId,
+      userName: booking.user?.name,
+      clientName: booking.clientName,
+      serviceName: booking.service.name,
+      barberName: booking.barber.user.name,
+      finalDisplayName:
+        booking.clientName || booking.user?.name || "Cliente não informado",
+    });
+  });
+
+  const plainBookings = bookings.map((booking) => ({
+    ...booking,
+    service: {
+      ...booking.service,
+      price: Number(booking.service.price),
+    },
+  }));
+
+  return JSON.parse(JSON.stringify(plainBookings));
+}
+
+// UPDATE: Função para atualizar um agendamento existente
+export interface UpdateBookingInput extends CreateBookingInput {
+  bookingId: string;
+}
+
+export async function updateBooking(payload: UpdateBookingInput) {
+  const session = await getServerSession(authOptions);
+  const { bookingId, ...data } = payload;
+
+  console.log("🔍 Debug - Atualizando booking:", bookingId, data);
+  console.log("🔍 Debug - Sessão:", session?.user?.id);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!session?.user || !(session.user as any).id) {
+    throw new Error("Acesso não autorizado.");
+  }
+  if (!bookingId) {
+    throw new Error("ID do agendamento é obrigatório para atualização.");
+  }
+
+  const bookingToUpdate = await db.booking.findUnique({
+    where: { id: bookingId },
+    select: { barbershop: { select: { ownerId: true } } },
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (bookingToUpdate?.barbershop.ownerId !== (session.user as any).id) {
+    throw new Error("Você não tem permissão para editar este agendamento.");
+  }
+
+  const updatedBooking = await db.booking.update({
+    where: { id: bookingId },
+    data: {
+      serviceId: data.serviceId,
+      date: data.date,
+      barberId: data.barberId,
+      clientName: data.clientName,
+      clientPhone: data.clientPhone,
+      notes: data.notes,
+    },
+  });
+
+  console.log("✅ Debug - Booking atualizado:", updatedBooking.id);
+
+  revalidatePath("/dashboard/agendamentos");
 }
 
 export async function getAvailableTimeSlots(
@@ -162,7 +272,7 @@ export async function getAvailableTimeSlots(
     }
 
     if (isBefore(currentTime, now)) {
-      currentTime = addMinutes(currentTime, 15); // Avança em intervalos de 15min se o slot estiver no passado
+      currentTime = addMinutes(currentTime, 15);
       continue;
     }
 
@@ -203,6 +313,7 @@ export async function getAvailableTimeSlots(
   return availableSlots;
 }
 
+// FUNÇÃO PRINCIPAL CORRIGIDA - createBooking
 export const createBooking = async ({
   serviceId,
   date,
@@ -213,22 +324,54 @@ export const createBooking = async ({
   notes = null,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   try {
-    const session = await getServerSession(authOptions);
+    console.log("🔍 Debug - Iniciando criação de booking com dados:", {
+      serviceId,
+      date,
+      barbershopId,
+      barberId,
+      clientName,
+      clientPhone,
+      notes,
+    });
 
+    const session = await getServerSession(authOptions);
+    console.log("🔍 Debug - Sessão encontrada:", {
+      userId: session?.user?.id,
+      userName: session?.user?.name,
+      userEmail: session?.user?.email,
+    });
+
+    // LÓGICA CORRIGIDA: Definir userId baseado em critérios claros
     let bookingUserId: string | null = null;
-    if (clientName && clientName.trim().length > 0) {
-      bookingUserId = null;
-    } else if (session?.user?.id) {
+
+    // Se há um usuário logado, usar o ID dele
+    if (session?.user?.id) {
       bookingUserId = session.user.id;
+      console.log("🔍 Debug - Usando userId da sessão:", bookingUserId);
     } else {
-      return {
-        success: false,
-        error:
-          "Para agendamentos manuais, o nome do cliente é obrigatório. Para agendamentos de usuário, faça login.",
-      };
+      // Se não há usuário logado, deve ter clientName obrigatório
+      if (!clientName || clientName.trim().length === 0) {
+        console.log("❌ Debug - Sem usuário logado e sem clientName");
+        return {
+          success: false,
+          error:
+            "Para agendamentos sem login, o nome do cliente é obrigatório.",
+        };
+      }
+      console.log(
+        "🔍 Debug - Agendamento sem usuário logado, usando clientName:",
+        clientName,
+      );
     }
 
+    // Validações básicas
     if (!serviceId || !date || !barbershopId || !barberId) {
+      console.log("❌ Debug - Dados incompletos:", {
+        serviceId,
+        date,
+        barbershopId,
+        barberId,
+      });
       return {
         success: false,
         error:
@@ -238,18 +381,22 @@ export const createBooking = async ({
 
     const bookingDate = new Date(date);
     if (isNaN(bookingDate.getTime())) {
+      console.log("❌ Debug - Data inválida:", date);
       return {
         success: false,
         error: "Data ou hora do agendamento inválidas.",
       };
     }
+
     if (bookingDate < new Date()) {
+      console.log("❌ Debug - Data no passado:", bookingDate);
       return {
         success: false,
         error: "Não é possível agendar para uma data ou horário no passado.",
       };
     }
 
+    // Verificar se o serviço existe
     const service = await db.barbershopService.findUnique({
       where: { id: serviceId },
       select: {
@@ -259,16 +406,15 @@ export const createBooking = async ({
         barbershop: true,
       },
     });
+
     if (!service) {
+      console.log("❌ Debug - Serviço não encontrado:", serviceId);
       return { success: false, error: "Serviço não encontrado." };
     }
-    if (!service.barbershop) {
-      return {
-        success: false,
-        error: "Barbearia associada ao serviço não encontrada.",
-      };
-    }
 
+    console.log("🔍 Debug - Serviço encontrado:", service.name);
+
+    // Verificar disponibilidade do horário
     const availableSlotsAtCreateTime = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
@@ -278,6 +424,7 @@ export const createBooking = async ({
 
     const requestedTime = format(bookingDate, "HH:mm");
     if (!availableSlotsAtCreateTime.includes(requestedTime)) {
+      console.log("❌ Debug - Horário não disponível:", requestedTime);
       return {
         success: false,
         error:
@@ -285,17 +432,24 @@ export const createBooking = async ({
       };
     }
 
+    console.log("🔍 Debug - Horário disponível, criando booking...");
+
+    // Criar o booking
+    const bookingData = {
+      userId: bookingUserId,
+      serviceId,
+      date: bookingDate,
+      barbershopId,
+      barberId,
+      clientName: clientName,
+      clientPhone: clientPhone,
+      notes: notes,
+    };
+
+    console.log("🔍 Debug - Dados do booking a serem salvos:", bookingData);
+
     const booking = await db.booking.create({
-      data: {
-        userId: bookingUserId,
-        serviceId,
-        date: bookingDate,
-        barbershopId,
-        barberId,
-        clientName: clientName,
-        clientPhone: clientPhone,
-        notes: notes,
-      },
+      data: bookingData,
       include: {
         service: {
           select: { name: true, price: true, durationInMinutes: true },
@@ -306,6 +460,15 @@ export const createBooking = async ({
       },
     });
 
+    console.log("✅ Debug - Booking criado com sucesso:", {
+      id: booking.id,
+      userId: booking.userId,
+      userName: booking.user?.name,
+      clientName: booking.clientName,
+      date: booking.date,
+    });
+
+    // Envio de mensagem
     const barbershopName = booking.barbershop.name;
     const serviceName = booking.service.name;
     const barberName = booking.barber.user.name || "um barbeiro";
@@ -331,6 +494,7 @@ export const createBooking = async ({
       );
     }
 
+    // Revalidar paths
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath("/dashboard/agendamentos");
     if (bookingUserId) {
@@ -339,7 +503,7 @@ export const createBooking = async ({
 
     return { success: true, booking };
   } catch (error: unknown) {
-    console.error("Erro ao criar agendamento:", error);
+    console.error("❌ Erro ao criar agendamento:", error);
     let errorMessage = "Erro interno do servidor. Tente novamente mais tarde.";
     if (error instanceof Error) {
       errorMessage = error.message;
@@ -358,7 +522,10 @@ export const createBooking = async ({
 };
 
 export async function deleteBooking(bookingId: string) {
+  console.log("🔍 Debug - Deletando booking:", bookingId);
+
   const session = await getServerSession(authOptions);
+  console.log("🔍 Debug - Sessão para delete:", session?.user?.id);
 
   if (!session?.user?.id) {
     throw new Error(
@@ -375,6 +542,12 @@ export async function deleteBooking(bookingId: string) {
     throw new Error("Agendamento não encontrado.");
   }
 
+  console.log("🔍 Debug - Booking a ser deletado:", {
+    ownerId: bookingToDelete.barbershop.ownerId,
+    userId: bookingToDelete.userId,
+    sessionUserId: session.user.id,
+  });
+
   const isOwner = bookingToDelete.barbershop.ownerId === session.user.id;
   const isClient = bookingToDelete.userId === session.user.id;
 
@@ -387,6 +560,8 @@ export async function deleteBooking(bookingId: string) {
       where: { id: bookingId },
     });
 
+    console.log("✅ Debug - Booking deletado com sucesso:", bookingId);
+
     revalidatePath("/dashboard/agendamentos");
     if (isClient) {
       revalidatePath(`/meus-agendamentos`);
@@ -394,7 +569,7 @@ export async function deleteBooking(bookingId: string) {
 
     return { success: true };
   } catch (error) {
-    console.error("Erro ao excluir agendamento:", error);
+    console.error("❌ Erro ao excluir agendamento:", error);
     throw new Error("Falha ao excluir o agendamento. Tente novamente.");
   }
 }
