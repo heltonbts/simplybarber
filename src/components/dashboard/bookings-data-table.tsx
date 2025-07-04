@@ -53,94 +53,75 @@ export function BookingsDataTable({
 
   return (
     <>
-            {/* Layout Mobile: Cards */}     {" "}
-      <div className="grid gap-4 sm:hidden">
-               {" "}
+            {/* Layout Mobile: Cards */}     
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
         {data.map((booking: any) => (
-          <Card key={booking.id}>
-                       {" "}
-            <CardContent className="p-4 space-y-3">
-                           {" "}
+          <Card key={booking.id} className="p-0 max-w-[200px] w-full">
+            <CardContent className="p-2 space-y-1 text-xs">
               <div className="flex justify-between items-start">
-                               {" "}
                 <Badge
+                  className="text-[10px] px-2 py-0.5"
                   variant={
                     new Date(booking.date) > new Date()
                       ? "default"
                       : "secondary"
                   }
                 >
-                                   {" "}
                   {new Date(booking.date) > new Date()
                     ? "Confirmado"
                     : "Finalizado"}
-                                 {" "}
                 </Badge>
-                               {" "}
                 <DropdownMenu>
-                                   {" "}
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="h-4 w-4" />
+                    <Button variant="ghost" className="h-6 w-6 p-0">
+                      <MoreHorizontal className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                                   {" "}
                   <DropdownMenuContent align="end">
-                                       {" "}
                     <DropdownMenuItem onClick={() => onEdit(booking)}>
-                      <Pencil className="mr-2 h-4 w-4" />
+                      <Pencil className="mr-1 h-3 w-3" />
                       <span>Editar</span>
                     </DropdownMenuItem>
-                                       {" "}
                     <DropdownMenuItem
                       className="text-red-600"
                       onClick={() => onDelete(booking.id)}
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
+                      <Trash2 className="mr-1 h-3 w-3" />
                       <span>Excluir</span>
                     </DropdownMenuItem>
-                                     {" "}
                   </DropdownMenuContent>
-                                 {" "}
                 </DropdownMenu>
-                             {" "}
               </div>
-                           {" "}
-              <div className="flex items-center gap-2">
-                                <UserIcon className="h-4 w-4" />               {" "}
-                <span className="font-semibold">
-                  {booking.clientName ||
-                    booking.user?.name ||
-                    "Cliente não informado"}
+
+              <div className="flex items-center gap-1">
+                <UserIcon className="h-3 w-3" />
+                <span>
+                  {booking.clientName || booking.user?.name || "Cliente"}
                 </span>
-                             {" "}
               </div>
-                           {" "}
-              <div className="flex items-center gap-2 text-sm">
-                <CalendarIcon className="h-4 w-4" />
+
+              <div className="flex items-center gap-1">
+                <CalendarIcon className="h-3 w-3" />
                 <span>{format(new Date(booking.date), "dd/MM/yy")}</span>
               </div>
-                           {" "}
-              <div className="flex items-center gap-2 text-sm">
-                <ClockIcon className="h-4 w-4" />
+
+              <div className="flex items-center gap-1">
+                <ClockIcon className="h-3 w-3" />
                 <span>{format(new Date(booking.date), "HH:mm")}</span>
               </div>
-                           {" "}
-              <div className="flex items-center gap-2 text-sm">
-                <ScissorsIcon className="h-4 w-4" />
+
+              <div className="flex items-center gap-1">
+                <ScissorsIcon className="h-3 w-3" />
                 <span>{booking.service.name}</span>
               </div>
-                           {" "}
-              <div className="flex items-center gap-2 text-sm">
-                <PersonStandingIcon className="h-4 w-4" />
+
+              <div className="flex items-center gap-1">
+                <PersonStandingIcon className="h-3 w-3" />
                 <span>{booking.barber.user.name}</span>
               </div>
-                         {" "}
             </CardContent>
-                     {" "}
           </Card>
         ))}
-             {" "}
       </div>
            {" "}
       {/* Layout Desktop: Tabela (JSX sem espaços para evitar erro de hidratação) */}
