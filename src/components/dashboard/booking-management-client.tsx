@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlusCircle } from "lucide-react";
 import { toast } from "sonner";
+import { format, isSameDay } from "date-fns";
 import {
   deleteBooking,
   BookingDetails,
@@ -32,6 +33,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Calendar } from "@/components/ui/calendar"; // shadcn calendar
 import { BarbershopService } from "../../../generated/prisma";
 
 interface BookingManagementClientProps {
@@ -53,6 +55,7 @@ export function BookingManagementClient({
   const [bookingToDelete, setBookingToDelete] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const handleOpenSheet = (booking: BookingDetails | null = null) => {
     setSelectedBooking(booking);
@@ -75,52 +78,62 @@ export function BookingManagementClient({
     }
   };
 
+  const filteredBookings = initialBookings.filter((booking) =>
+    isSameDay(new Date(booking.date), selectedDate),
+  );
+
   return (
     <>
-           {" "}
       <Card>
-               {" "}
-        <CardHeader className="flex flex-row items-center justify-between">
-                   {" "}
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-                        <CardTitle>Gerenciar Agendamentos</CardTitle>           {" "}
+            <CardTitle>Gerenciar Agendamentos</CardTitle>
             <CardDescription>
               Crie, edite e exclua os agendamentos.
             </CardDescription>
-                     {" "}
           </div>
-                   {" "}
           <Button onClick={() => handleOpenSheet()}>
             <PlusCircle className="h-4 w-4 mr-2" />
             Novo Agendamento
           </Button>
-                 {" "}
         </CardHeader>
-               {" "}
+
         <CardContent>
-                   {" "}
-          <BookingsDataTable
-            data={initialBookings}
-            onEdit={handleOpenSheet}
-            onDelete={(id) => setBookingToDelete(id)}
-          />
-                 {" "}
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Calendário de filtro */}
+            <div className="lg:w-64">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => date && setSelectedDate(date)}
+              />
+            </div>
+
+            {/* Tabela de agendamentos filtrada */}
+            <div className="flex-1">
+              <div className="mb-2 font-semibold">
+                Agendamentos em {format(selectedDate, "dd/MM/yyyy")}
+              </div>
+
+              <BookingsDataTable
+                data={filteredBookings}
+                onEdit={handleOpenSheet}
+                onDelete={(id) => setBookingToDelete(id)}
+              />
+            </div>
+          </div>
         </CardContent>
-             {" "}
       </Card>
-           {" "}
+
+      {/* Sheet para editar ou criar */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-               {" "}
         <SheetContent className="overflow-y-auto">
-                   {" "}
           <SheetHeader>
             <SheetTitle>
               {selectedBooking ? "Editar Agendamento" : "Novo Agendamento"}
             </SheetTitle>
           </SheetHeader>
-                   {" "}
           <div className="py-4">
-                       {" "}
             <ManualBookingForm
               key={selectedBooking?.id ?? "new"}
               barbershopId={barbershopId}
@@ -129,30 +142,23 @@ export function BookingManagementClient({
               initialData={selectedBooking}
               onFinished={() => setIsSheetOpen(false)}
             />
-                     {" "}
           </div>
-                 {" "}
         </SheetContent>
-             {" "}
       </Sheet>
-           {" "}
+
+      {/* Modal de confirmação */}
       <Dialog
         open={!!bookingToDelete}
         onOpenChange={() => setBookingToDelete(null)}
       >
-               {" "}
         <DialogContent>
-                   {" "}
           <DialogHeader>
-                        <DialogTitle>Confirmar Exclusão</DialogTitle>           {" "}
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
             <DialogDescription>
               Tem certeza? Esta ação não pode ser desfeita.
             </DialogDescription>
-                     {" "}
           </DialogHeader>
-                   {" "}
           <DialogFooter>
-                       {" "}
             <Button
               variant="outline"
               onClick={() => setBookingToDelete(null)}
@@ -160,7 +166,6 @@ export function BookingManagementClient({
             >
               Cancelar
             </Button>
-                       {" "}
             <Button
               variant="destructive"
               onClick={handleDeleteConfirm}
@@ -168,13 +173,9 @@ export function BookingManagementClient({
             >
               {isDeleting ? "Excluindo..." : "Confirmar"}
             </Button>
-                     {" "}
           </DialogFooter>
-                 {" "}
         </DialogContent>
-             {" "}
       </Dialog>
-         {" "}
     </>
   );
 }
