@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
-import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarIcon, Loader2, ChevronLeft } from "lucide-react";
+import { toast } from "sonner";
+import { CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { toast } from "sonner";
-import { Prisma } from "../../../generated/prisma";
 
-// Componentes Shadcn/UI
+import {
+  createBooking,
+  updateBooking,
+  BookingDetails,
+  BarberWithUser,
+  CreateBookingInput,
+} from "@/actions/create-booking";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -21,394 +25,241 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { BarbershopService } from "../../../generated/prisma";
 
-// Actions de Agendamento
-import { getAvailableTimeSlots, createBooking } from "@/actions/create-booking";
-
-// Tipos para as props recebidas do Server Component
-type BarberPayload = Prisma.BarberGetPayload<{
-  include: { user: { select: { name: true } } };
-}>;
-type ServicePayload = Prisma.BarbershopServiceGetPayload<object>;
-
-interface ManualBookingFormProps {
-  barbershopId: string;
-  barbers: BarberPayload[];
-  services: ServicePayload[];
-}
-
-// Schema de validação com Zod
-const formSchema = z.object({
+const bookingFormSchema = z.object({
+  clientName: z.string().min(3, "Nome do cliente é obrigatório."),
+  clientPhone: z.string().optional(),
   serviceId: z.string({ required_error: "Selecione um serviço." }),
   barberId: z.string({ required_error: "Selecione um barbeiro." }),
-  date: z.date({ required_error: "Selecione uma data." }),
-  time: z.string({ required_error: "Selecione um horário." }),
-  clientName: z
+  date: z.date({ required_error: "Selecione uma data." }).nullable(),
+  time: z
     .string()
-    .min(3, { message: "O nome precisa ter pelo menos 3 caracteres." }),
-  clientPhone: z.string().optional(),
+    .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora inválida (formato HH:MM)."),
   notes: z.string().optional(),
 });
 
-type FormData = z.infer<typeof formSchema>;
+type BookingFormValues = z.infer<typeof bookingFormSchema>;
+
+interface ManualBookingFormProps {
+  barbershopId: string;
+  barbers: BarberWithUser[];
+  services: BarbershopService[];
+  initialData?: BookingDetails | null;
+  onFinished: () => void;
+}
 
 export function ManualBookingForm({
   barbershopId,
   barbers,
   services,
+  initialData,
+  onFinished,
 }: ManualBookingFormProps) {
-  const [isPending, startTransition] = useTransition();
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [isFetchingSlots, setIsFetchingSlots] = useState(false);
-
   const {
     register,
     handleSubmit,
     control,
-    watch,
-    setValue,
-    reset,
-    formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    formState: { errors, isSubmitting },
+  } = useForm<BookingFormValues>({
+    resolver: zodResolver(bookingFormSchema),
     defaultValues: {
-      clientName: "",
-      clientPhone: "",
-      notes: "",
+      clientName: initialData?.clientName ?? "",
+      clientPhone: initialData?.clientPhone ?? "",
+      serviceId: initialData?.serviceId ?? "",
+      barberId: initialData?.barberId ?? "",
+      date: initialData ? new Date(initialData.date) : null,
+      time: initialData ? format(new Date(initialData.date), "HH:mm") : "",
+      notes: initialData?.notes ?? "",
     },
   });
 
-  const selectedDate = watch("date");
-  const selectedServiceId = watch("serviceId");
-  const selectedBarberId = watch("barberId");
-
-  useEffect(() => {
-    if (!selectedDate || !selectedServiceId || !selectedBarberId) {
-      setAvailableSlots([]);
+  const onSubmit = async (data: BookingFormValues) => {
+    if (!data.date) {
+      toast.error("Por favor, selecione uma data para o agendamento.");
       return;
     }
 
-    const fetchSlots = async () => {
-      setIsFetchingSlots(true);
-      try {
-        const slots = await getAvailableTimeSlots(
-          barbershopId,
-          selectedDate,
-          selectedServiceId,
-          selectedBarberId,
-        );
-        setAvailableSlots(slots);
-      } catch (error) {
-        console.error("Erro ao buscar horários:", error);
-        toast.error("Não foi possível carregar os horários disponíveis.");
-      } finally {
-        setIsFetchingSlots(false);
+    try {
+      const [hours, minutes] = data.time.split(":").map(Number);
+      const combinedDate = new Date(data.date);
+      combinedDate.setHours(hours, minutes, 0, 0);
+
+      const payload: CreateBookingInput = {
+        barbershopId,
+        serviceId: data.serviceId,
+        barberId: data.barberId,
+        date: combinedDate,
+        clientName: data.clientName,
+        clientPhone: data.clientPhone,
+        notes: data.notes,
+      };
+
+      if (initialData) {
+        await updateBooking({ ...payload, bookingId: initialData.id });
+        toast.success("Agendamento atualizado com sucesso!");
+      } else {
+        const result = await createBooking(payload);
+        if (!result.success) throw new Error(result.error);
+        toast.success("Agendamento criado com sucesso!");
       }
-    };
-
-    fetchSlots();
-    setValue("time", "");
-  }, [
-    selectedDate,
-    selectedServiceId,
-    selectedBarberId,
-    setValue,
-    barbershopId,
-  ]);
-
-  const onSubmit = (data: FormData) => {
-    startTransition(async () => {
-      try {
-        const [hour, minute] = data.time.split(":").map(Number);
-        const bookingDateTime = new Date(data.date);
-        bookingDateTime.setHours(hour, minute, 0, 0);
-
-        const result = await createBooking({
-          barbershopId,
-          serviceId: data.serviceId,
-          barberId: data.barberId,
-          date: bookingDateTime,
-          clientName: data.clientName,
-          clientPhone: data.clientPhone,
-          notes: data.notes,
-        });
-
-        if (result.success) {
-          toast.success("Agendamento criado com sucesso!");
-          reset();
-          setAvailableSlots([]);
-        } else {
-          toast.error(result.error || "Ocorreu um erro ao agendar.");
-        }
-      } catch {
-        toast.error("Ocorreu um erro inesperado. Tente novamente.");
-      }
-    });
+      onFinished();
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Ocorreu um erro.";
+      toast.error(errorMessage);
+    }
   };
 
   return (
-    <Card>
-      <CardHeader className="relative">
-        <Button
-          asChild
-          size="icon"
-          variant="outline"
-          className="absolute left-4 top-4"
-        >
-          <Link href="/dashboard">
-            <ChevronLeft size={20} />
-          </Link>
-        </Button>
-        <CardTitle className="text-center">Agendamento Manual</CardTitle>
-        <CardDescription className="text-center">
-          Preencha os dados abaixo para criar um novo agendamento para um
-          cliente.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-4 rounded-md border p-4">
-            <h3 className="text-lg font-semibold">Dados do Cliente</h3>
-            <div>
-              <label
-                htmlFor="clientName"
-                className="block text-sm font-medium mb-1"
-              >
-                Nome do Cliente
-              </label>
-              <Input
-                id="clientName"
-                placeholder="Ex: Carlos Pereira"
-                {...register("clientName")}
-              />
-              {errors.clientName && (
-                <p className="text-sm text-red-500 mt-1">
-                  {errors.clientName.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <label
-                htmlFor="clientPhone"
-                className="block text-sm font-medium mb-1"
-              >
-                Telefone (Opcional)
-              </label>
-              <Input
-                id="clientPhone"
-                placeholder="(99) 99999-9999"
-                {...register("clientPhone")}
-              />
-              {errors.clientPhone && (
-                <p className="text-sm text-red-500 mt-1">
-                  {errors.clientPhone.message}
-                </p>
-              )}
-            </div>
-          </div>
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 p-1">
+      <div>
+        <Label htmlFor="clientName">Nome do Cliente</Label>
+        <Input
+          id="clientName"
+          {...register("clientName")}
+          placeholder="Ex: João Silva"
+        />
+        {errors.clientName && (
+          <p className="text-sm text-red-500 mt-1">
+            {errors.clientName.message}
+          </p>
+        )}
+      </div>
 
-          <div className="space-y-4 rounded-md border p-4">
-            <h3 className="text-lg font-semibold">Detalhes do Agendamento</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="serviceId"
-                  className="block text-sm font-medium mb-1"
-                >
-                  Serviço
-                </label>
-                <Controller
-                  name="serviceId"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger id="serviceId">
-                        <SelectValue placeholder="Selecione o serviço" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {services.map((service) => (
-                          <SelectItem key={service.id} value={service.id}>
-                            {service.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.serviceId && (
-                  <p className="text-sm text-red-500 mt-1">
-                    {errors.serviceId.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label
-                  htmlFor="barberId"
-                  className="block text-sm font-medium mb-1"
-                >
-                  Barbeiro
-                </label>
-                <Controller
-                  name="barberId"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger id="barberId">
-                        <SelectValue placeholder="Selecione o barbeiro" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {barbers.map((barber) => (
-                          <SelectItem key={barber.id} value={barber.id}>
-                            {barber.user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.barberId && (
-                  <p className="text-sm text-red-500 mt-1">
-                    {errors.barberId.message}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Data</label>
-                <Controller
-                  name="date"
-                  control={control}
-                  render={({ field }) => (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant={"outline"}
-                          className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"}`}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {field.value ? (
-                            format(field.value, "PPP", { locale: ptBR })
-                          ) : (
-                            <span>Escolha uma data</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) =>
-                            date < new Date(new Date().setHours(0, 0, 0, 0))
-                          }
-                          initialFocus
-                          locale={ptBR}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                />
-                {errors.date && (
-                  <p className="text-sm text-red-500 mt-1">
-                    {errors.date.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label
-                  htmlFor="time"
-                  className="block text-sm font-medium mb-1"
-                >
-                  Horário
-                </label>
-                <Controller
-                  name="time"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      disabled={
-                        !selectedDate ||
-                        !selectedServiceId ||
-                        !selectedBarberId ||
-                        isFetchingSlots
-                      }
-                    >
-                      <SelectTrigger id="time">
-                        <SelectValue
-                          placeholder={
-                            isFetchingSlots
-                              ? "Buscando..."
-                              : "Selecione o horário"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {isFetchingSlots ? (
-                          <div className="flex items-center justify-center p-2">
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Carregando...
-                          </div>
-                        ) : availableSlots.length > 0 ? (
-                          availableSlots.map((slot) => (
-                            <SelectItem key={slot} value={slot}>
-                              {slot}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <div className="p-2 text-center text-sm text-muted-foreground">
-                            Nenhum horário vago.
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.time && (
-                  <p className="text-sm text-red-500 mt-1">
-                    {errors.time.message}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div>
-              <label htmlFor="notes" className="block text-sm font-medium mb-1">
-                Descrição/Observação (Opcional)
-              </label>
-              <Textarea
-                id="notes"
-                placeholder="Ex: Cliente tem preferência pela máquina 2 na lateral."
-                {...register("notes")}
-              />
-              {errors.notes && (
+      <div>
+        <Label htmlFor="clientPhone">Telefone (Opcional)</Label>
+        <Input
+          id="clientPhone"
+          {...register("clientPhone")}
+          placeholder="(99) 99999-9999"
+        />
+      </div>
+
+      <Controller
+        name="serviceId"
+        control={control}
+        render={({ field }) => (
+          <div>
+            <Label>Serviço</Label>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o serviço" />
+              </SelectTrigger>
+              <SelectContent>
+                {services.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.serviceId && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.serviceId.message}
+              </p>
+            )}
+          </div>
+        )}
+      />
+
+      <Controller
+        name="barberId"
+        control={control}
+        render={({ field }) => (
+          <div>
+            <Label>Barbeiro</Label>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o barbeiro" />
+              </SelectTrigger>
+              <SelectContent>
+                {barbers.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.user.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.barberId && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.barberId.message}
+              </p>
+            )}
+          </div>
+        )}
+      />
+
+      <div className="flex gap-4">
+        <Controller
+          name="date"
+          control={control}
+          render={({ field }) => (
+            <div className="w-full">
+              <Label>Data</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {field.value instanceof Date
+                      ? format(field.value, "PPP", { locale: ptBR })
+                      : "Escolha uma data"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={field.value ?? undefined}
+                    onSelect={field.onChange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {errors.date && (
                 <p className="text-sm text-red-500 mt-1">
-                  {errors.notes.message}
+                  {errors.date.message}
                 </p>
               )}
             </div>
-          </div>
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Criar Agendamento
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+          )}
+        />
+        <div className="w-1/3">
+          <Label htmlFor="time">Hora</Label>
+          <Input id="time" {...register("time")} placeholder="14:30" />
+          {errors.time && (
+            <p className="text-sm text-red-500 mt-1">{errors.time.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor="notes">Observações (Opcional)</Label>
+        <Textarea
+          id="notes"
+          {...register("notes")}
+          placeholder="Ex: Cabelo mais curto nas laterais."
+        />
+      </div>
+
+      <Button type="submit" disabled={isSubmitting} className="w-full">
+        {isSubmitting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : initialData ? (
+          "Salvar Alterações"
+        ) : (
+          "Criar Agendamento"
+        )}
+      </Button>
+    </form>
   );
 }
