@@ -90,22 +90,25 @@ export default function SettingsClientPage({
   });
 
   // Preenche o formulário com os dados iniciais da barbearia
+  // Controla se o formulário já foi inicializado para evitar reset múltiplo
+  const hasInitialized = useState({ current: false })[0];
+
   useEffect(() => {
-    if (initialBarbershop) {
+    if (initialBarbershop && !hasInitialized.current) {
       form.reset(
         {
           name: initialBarbershop.name,
           address: initialBarbershop.address,
-          // Converte o array de telefones para uma única string separada por vírgulas para o input
           phone: initialBarbershop.phone.join(", ") || "",
           description: initialBarbershop.description,
           imageUrl: initialBarbershop.imageUrl,
         },
         { keepDefaultValues: false },
       );
-      setImagePreviewUrl(initialBarbershop.imageUrl); // Define a prévia para a imagem existente
+      setImagePreviewUrl(initialBarbershop.imageUrl);
+      hasInitialized.current = true; // <-- só deixa resetar uma vez
     }
-  }, [initialBarbershop, form]);
+  }, [initialBarbershop, form, hasInitialized]);
 
   const handleImageFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
