@@ -3,7 +3,6 @@ import { db } from "@/lib/prisma";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeftIcon, MapPinIcon, StarIcon } from "lucide-react";
-
 import Contact from "@/components/contact";
 import ServiceItem from "@/components/service-item";
 import Sidebar from "@/components/sidebar";
@@ -12,12 +11,13 @@ import { Button } from "@/components/ui/button";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-export default async function BarbershopPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const { id } = params;
+interface BarbershopPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function BarbershopPage({ params }: BarbershopPageProps) {
+  // Aguarda a resolução dos parâmetros
+  const { id } = await params;
 
   const barbershop = await db.barbershop.findUnique({
     where: { id },
@@ -59,7 +59,6 @@ export default async function BarbershopPage({
           fill
           className="object-cover"
         />
-
         <Button
           size="icon"
           className="absolute top-4 left-4 z-10"
@@ -70,12 +69,10 @@ export default async function BarbershopPage({
             <ChevronLeftIcon />
           </Link>
         </Button>
-
         <div className="absolute top-4 right-4">
           <Sidebar variant="secondary" />
         </div>
       </div>
-
       <div className="p-5 border-b border-solid">
         <h1 className="font-bold text-xl mb-3">{barbershop.name}</h1>
         <div className="flex items-center gap-1 mb-2">
@@ -87,12 +84,10 @@ export default async function BarbershopPage({
           <p className="text-sm">5,0 (522 avaliações)</p>
         </div>
       </div>
-
       <div className="p-5 border-b border-solid space-y-3">
         <h2 className="font-bold uppercase text-xs text-gray-400">Sobre nós</h2>
         <p className="text-justify">{barbershop.description}</p>
       </div>
-
       <div className="p-5 border-b border-solid">
         <h2 className="font-bold uppercase text-xs text-gray-400 mb-3">
           Serviços
@@ -109,7 +104,6 @@ export default async function BarbershopPage({
           ))}
         </div>
       </div>
-
       <div className="space-y-3 p-5">
         {barbershop.phone.map((phone) => (
           <Contact key={phone} phone={phone} />
