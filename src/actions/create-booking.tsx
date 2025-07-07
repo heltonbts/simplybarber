@@ -269,6 +269,9 @@ export const createBooking = async ({
   date,
   barbershopId,
   barberId,
+  clientName,
+  clientPhone,
+  notes,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   noStore();
 
@@ -277,7 +280,7 @@ export const createBooking = async ({
     return { success: false, error: "Acesso não autorizado." };
   }
 
-  const bookingDate = new Date(date);
+  const bookingDate = startOfMinute(setMilliseconds(new Date(date), 0));
   if (isNaN(bookingDate.getTime())) {
     return { success: false, error: "Data inválida." };
   }
@@ -287,23 +290,29 @@ export const createBooking = async ({
       where: { id: serviceId },
       select: { durationInMinutes: true },
     });
-    if (!service) throw new Error("Serviço não encontrado.");
 
-    const availableSlotsBeforeBooking = await getAvailableTimeSlots(
+    if (!service) {
+      return { success: false, error: "Serviço não encontrado." };
+    }
+
+    // Revalida os horários disponíveis
+    const availableSlots = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
       serviceId,
       barberId,
     );
+
     const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
 
-    if (!availableSlotsBeforeBooking.includes(requestedTime)) {
+    if (!availableSlots.includes(requestedTime)) {
       return {
         success: false,
         error: "Horário não disponível. Por favor, atualize e escolha outro.",
       };
     }
 
+    // Cria o agendamento no banco
     const booking = await db.booking.create({
       data: {
         userId: session.user.id,
@@ -311,9 +320,13 @@ export const createBooking = async ({
         date: bookingDate,
         barbershopId,
         barberId,
+        clientName,
+        clientPhone,
+        notes,
       },
     });
 
+    // Adiciona ao cache
     const zonedDate = toZonedTime(booking.date, timeZone);
     const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
     const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
@@ -324,7 +337,7 @@ export const createBooking = async ({
 
     const pipe = kv.pipeline();
     pipe.sadd(kvKey, cacheValue);
-    pipe.expire(kvKey, 900); // 15 minutos
+    pipe.expire(kvKey, 900); // expira em 15 minutos
     await pipe.exec();
 
     const newAvailableSlots = await getAvailableTimeSlots(
@@ -334,7 +347,10 @@ export const createBooking = async ({
       barberId,
     );
 
+    // Revalida as rotas
     revalidatePath(`/barbershops/${barbershopId}`);
+    revalidatePath(`/meus-agendamentos`);
+    revalidatePath(`/dashboard/agendamentos`);
 
     return { success: true, booking, newAvailableSlots };
   } catch (error) {
@@ -348,11 +364,14 @@ export const createBooking = async ({
           "Este horário foi agendado por outra pessoa. Por favor, atualize e escolha um novo horário.",
       };
     }
+
     console.error("[CREATE_BOOKING_ERROR]", error);
-    return { success: false, error: "Ocorreu um erro ao criar o agendamento." };
+    return {
+      success: false,
+      error: "Ocorreu um erro ao criar o agendamento. Tente novamente.",
+    };
   }
 };
-
 export async function deleteBooking(bookingId: string) {
   const session = await getServerSession(authOptions);
 
