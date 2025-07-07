@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Barbershop, BarbershopService } from "../../generated/prisma"; // Ajustar caminho para os types do Prisma se necessário
+import { Barbershop, BarbershopService } from "../../generated/prisma";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import {
@@ -32,11 +32,11 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { createBooking, getAvailableTimeSlots } from "@/actions/create-booking"; // createBooking, getAvailableTimeSlots
+import { createBooking, getAvailableTimeSlots } from "@/actions/create-booking";
 import type {
   BarberForBookings,
   BarbershopWorkingHourForBookings,
-} from "@/app/dashboard/agendamentos/BookingsClientPage"; // Tipos de barbeiro/horários
+} from "@/app/dashboard/agendamentos/BookingsClientPage";
 import { Label } from "@radix-ui/react-label";
 
 import { useLoginAlert } from "./useLoginAlert";
@@ -179,19 +179,27 @@ const ServiceItem = ({
       });
 
       if (result && result.success) {
-        toast.success("Reservado com Sucesso!");
+        toast.success("Reservado com Sucesso!", {
+          description: format(
+            finalBookingDate,
+            "'Para' dd 'de' MMMM 'às' HH:mm'.'",
+            { locale: ptBR },
+          ),
+          duration: 5000,
+        });
 
-        // NÃO FECHE O PAINEL AINDA, MOSTRE AO USUÁRIO A ATUALIZAÇÃO
-        // setBookingSheetIsOpen(false);
+        const timer = setTimeout(() => {
+          setBookingSheetIsOpen(false);
+        }, 1000);
 
-        // ATUALIZE OS HORÁRIOS COM A LISTA FRESCA VINDA DO BACKEND
         setAvailableSlots(result.newAvailableSlots || []);
 
-        // RESETA A SELEÇÃO DE HORÁRIO, MAS MANTÉM O DIA E O BARBEIRO
         form.reset({
-          ...form.getValues(), // Mantém os valores atuais
-          time: UNSELECTED_PLACEHOLDER_VALUE, // Apenas reseta o horário
+          ...form.getValues(),
+          time: UNSELECTED_PLACEHOLDER_VALUE,
         });
+
+        return () => clearTimeout(timer);
       } else {
         toast.error(result?.error || "Erro ao criar reserva");
       }
@@ -232,12 +240,10 @@ const ServiceItem = ({
                 src={service.imageUrl}
                 alt={service.name}
                 fill
-                className="rounded-md object-cover" // Added object-cover for better image fitting
+                className="rounded-md object-cover"
               />
             </div>
             <div className="space-y-2 flex-1">
-              {" "}
-              {/* flex-1 para ocupar espaço */}
               <h3 className="font-semibold text-sm">{service.name}</h3>
               <p className="text-sm text-gray-400">{service.description}</p>
               <div className="flex items-center justify-between">
@@ -259,9 +265,8 @@ const ServiceItem = ({
                   >
                     Agendar
                   </Button>
+
                   <SheetContent className="overflow-y-auto w-full md:w-[540px] px-0">
-                    {" "}
-                    {/* Ajuste de largura e padding */}
                     <SheetHeader className="px-5 text-left">
                       <SheetTitle>Faça sua Reserva</SheetTitle>
                       <SheetDescription>
@@ -275,162 +280,158 @@ const ServiceItem = ({
                         <br />
                       </SheetDescription>
                     </SheetHeader>
+
+                    {/* Calendário */}
                     <div className="py-4 flex flex-col items-center border-b border-solid border-border-foreground/20">
                       <Calendar
                         mode="single"
-                        selected={form.watch("date")} // Sincroniza com o React Hook Form
+                        selected={form.watch("date")}
                         onSelect={handleDaySelected}
                         disabled={{
                           before: new Date(new Date().setHours(0, 0, 0, 0)),
-                        }} // Desabilita dias passados
+                        }}
                         locale={ptBR}
                         styles={{
                           head_cell: {
                             width: "100%",
                             textTransform: "capitalize",
                           },
-                          cell: {
-                            width: "100%",
-                          },
-                          button: {
-                            width: "100%",
-                          },
+                          cell: { width: "100%" },
+                          button: { width: "100%" },
                           nav_button_previous: {
                             width: "32px",
                             height: "32px",
                           },
-                          nav_button_next: {
-                            width: "32px",
-                            height: "32px",
-                          },
-                          caption: {
-                            textTransform: "capitalize",
-                          },
+                          nav_button_next: { width: "32px", height: "32px" },
+                          caption: { textTransform: "capitalize" },
                         }}
                       />
                     </div>
-                    {/* Formulário de Seleção de Barbeiro e Horário */}
-                    <div className="px-5 py-4 space-y-4">
-                      {/* Seleção de Barbeiro */}
-                      <div>
-                        <Label htmlFor="barber">Barbeiro</Label>
-                        <Select
-                          onValueChange={(value) =>
-                            form.setValue("barberId", value, {
-                              shouldValidate: true,
-                            })
-                          }
-                          value={form.watch("barberId")}
-                        >
-                          <SelectTrigger className="w-full mt-1">
-                            <SelectValue placeholder="Selecione um barbeiro" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-card text-card-foreground">
-                            <SelectItem
-                              value={UNSELECTED_PLACEHOLDER_VALUE}
-                              disabled
-                            >
-                              Selecione um barbeiro
-                            </SelectItem>
-                            {availableBarbers.length === 0 ? (
-                              <SelectItem
-                                value={NO_BARBERS_FOUND_VALUE}
-                                disabled
-                              >
-                                Nenhum barbeiro disponível
-                              </SelectItem>
-                            ) : (
-                              availableBarbers.map((barber) => (
-                                <SelectItem key={barber.id} value={barber.id}>
-                                  {barber.user.name || barber.user.email}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        {form.formState.errors.barberId && (
-                          <p className="text-red-500 text-sm mt-1">
-                            {form.formState.errors.barberId.message}
-                          </p>
-                        )}
-                      </div>
 
-                      {/* Seleção de Horário */}
-                      <div>
-                        <Label htmlFor="time">Horário</Label>
-                        <Select
-                          onValueChange={(value) =>
-                            form.setValue("time", value, {
-                              shouldValidate: true,
-                            })
-                          }
-                          value={form.watch("time")}
-                          disabled={
-                            fetchingSlots ||
-                            !form.watch("barberId") ||
-                            !form.watch("date")
-                          } // Desabilita se barbeiro ou data não selecionados
-                        >
-                          <SelectTrigger className="w-full mt-1">
-                            <SelectValue
-                              placeholder={
-                                fetchingSlots
-                                  ? "Buscando horários..."
-                                  : !form.watch("barberId") ||
-                                      !form.watch("date")
-                                    ? "Selecione a data e o barbeiro"
-                                    : "Selecione um horário"
+                    {/* --- LÓGICA CONDICIONAL PARA BARBEIRO E HORÁRIO --- */}
+                    <div className="px-5 py-4 space-y-4">
+                      {form.watch("date") ? (
+                        // SE UMA DATA FOI SELECIONADA, MOSTRA OS CAMPOS
+                        <>
+                          {/* Seleção de Barbeiro */}
+                          <div>
+                            <Label htmlFor="barber">Barbeiro</Label>
+                            <Select
+                              onValueChange={(value) =>
+                                form.setValue("barberId", value, {
+                                  shouldValidate: true,
+                                })
                               }
-                            />
-                          </SelectTrigger>
-                          <SelectContent className="bg-card text-card-foreground">
-                            <SelectItem
-                              value={UNSELECTED_PLACEHOLDER_VALUE}
-                              disabled
+                              value={form.watch("barberId")}
                             >
-                              Selecione um horário
-                            </SelectItem>
-                            {fetchingSlots ? (
-                              <SelectItem value={LOADING_SLOTS_VALUE} disabled>
-                                Carregando...
-                              </SelectItem>
-                            ) : availableSlots.length === 0 ? (
-                              <SelectItem
-                                value={NO_SLOTS_AVAILABLE_VALUE}
-                                disabled
-                              >
-                                Nenhum horário disponível
-                              </SelectItem>
-                            ) : (
-                              availableSlots.map((timeSlot) => (
-                                <SelectItem key={timeSlot} value={timeSlot}>
-                                  {timeSlot}
+                              <SelectTrigger className="w-full mt-1">
+                                <SelectValue placeholder="Selecione um barbeiro" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem
+                                  value={UNSELECTED_PLACEHOLDER_VALUE}
+                                  disabled
+                                >
+                                  Selecione um barbeiro
                                 </SelectItem>
-                              ))
+                                {availableBarbers.length === 0 ? (
+                                  <SelectItem
+                                    value={NO_BARBERS_FOUND_VALUE}
+                                    disabled
+                                  >
+                                    Nenhum barbeiro disponível
+                                  </SelectItem>
+                                ) : (
+                                  availableBarbers.map((barber) => (
+                                    <SelectItem
+                                      key={barber.id}
+                                      value={barber.id}
+                                    >
+                                      {barber.user.name || barber.user.email}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                            {form.formState.errors.barberId && (
+                              <p className="text-red-500 text-sm mt-1">
+                                {form.formState.errors.barberId.message}
+                              </p>
                             )}
-                          </SelectContent>
-                        </Select>
-                        {form.formState.errors.time && (
-                          <p className="text-red-500 text-sm mt-1">
-                            {form.formState.errors.time.message}
-                          </p>
-                        )}
-                        {/* Mensagem de ajuda para seleção de horário */}
-                        {!fetchingSlots &&
-                          availableSlots.length === 0 &&
-                          form.watch("barberId") !==
-                            UNSELECTED_PLACEHOLDER_VALUE &&
-                          form.watch("date") && (
-                            <p className="text-muted-foreground text-sm mt-1">
-                              Nenhum horário disponível para a combinação
-                              selecionada.
-                            </p>
+                          </div>
+
+                          {/* Seleção de Horário (só aparece após selecionar barbeiro) */}
+                          {form.watch("barberId") !==
+                            UNSELECTED_PLACEHOLDER_VALUE && (
+                            <div>
+                              <Label htmlFor="time">Horário</Label>
+                              <Select
+                                onValueChange={(value) =>
+                                  form.setValue("time", value, {
+                                    shouldValidate: true,
+                                  })
+                                }
+                                value={form.watch("time")}
+                                disabled={fetchingSlots}
+                              >
+                                <SelectTrigger className="w-full mt-1">
+                                  <SelectValue
+                                    placeholder={
+                                      fetchingSlots
+                                        ? "Buscando horários..."
+                                        : "Selecione um horário"
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {fetchingSlots ? (
+                                    <SelectItem
+                                      value={LOADING_SLOTS_VALUE}
+                                      disabled
+                                    >
+                                      Carregando...
+                                    </SelectItem>
+                                  ) : availableSlots.length === 0 ? (
+                                    <SelectItem
+                                      value={NO_SLOTS_AVAILABLE_VALUE}
+                                      disabled
+                                    >
+                                      Nenhum horário disponível
+                                    </SelectItem>
+                                  ) : (
+                                    availableSlots.map((timeSlot) => (
+                                      <SelectItem
+                                        key={timeSlot}
+                                        value={timeSlot}
+                                      >
+                                        {timeSlot}
+                                      </SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              {form.formState.errors.time && (
+                                <p className="text-red-500 text-sm mt-1">
+                                  {form.formState.errors.time.message}
+                                </p>
+                              )}
+                            </div>
                           )}
-                      </div>
+                        </>
+                      ) : (
+                        // SE NENHUMA DATA FOI SELECIONADA, MOSTRA A MENSAGEM
+                        <div className="py-6">
+                          <p className="text-sm text-center text-muted-foreground">
+                            Por favor, selecione uma data no calendário para ver
+                            os barbeiros e horários.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Exibição resumida do agendamento */}
                       {form.watch("date") &&
                         form.watch("time") &&
+                        form.watch("time") !== UNSELECTED_PLACEHOLDER_VALUE &&
                         form.watch("barberId") !==
                           UNSELECTED_PLACEHOLDER_VALUE && (
                           <Card className="mt-4 bg-secondary/20 border-border">
@@ -457,7 +458,7 @@ const ServiceItem = ({
                               <div className="flex justify-between items-center text-sm">
                                 <h2 className="text-gray-400">Data</h2>
                                 <p className="text-sm">
-                                  {format(form.watch("date"), "dd 'de' MMMM", {
+                                  {format(form.watch("date")!, "dd 'de' MMMM", {
                                     locale: ptBR,
                                   })}
                                 </p>
@@ -473,14 +474,14 @@ const ServiceItem = ({
                             </CardContent>
                           </Card>
                         )}
-                    </div>{" "}
-                    {/* Fim px-5 py-4 */}
+                    </div>
+
                     <SheetFooter className="px-5">
                       <Button
-                        onClick={form.handleSubmit(handleCreateBooking)} // Usa handleSubmit do RHF
+                        onClick={form.handleSubmit(handleCreateBooking)}
                         disabled={
                           isConfirmingBooking || !form.formState.isValid
-                        } // Desabilita se estiver confirmando ou se o form for inválido
+                        }
                         className="w-full"
                       >
                         {isConfirmingBooking ? (
