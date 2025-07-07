@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: "Sua plataforma de agendamento para barbearias.",
 };
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 export default function RootLayout({
   children,
 }: Readonly<{
