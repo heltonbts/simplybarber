@@ -22,7 +22,6 @@ import {
   BarbershopService,
   User,
 } from "../../generated/prisma";
-
 import { unstable_noStore as noStore } from "next/cache";
 
 export interface CreateBookingInput {
@@ -35,43 +34,9 @@ export interface CreateBookingInput {
   notes?: string | null;
 }
 
-export type BookingResponseDetails = Prisma.BookingGetPayload<{
-  include: {
-    service: {
-      select: {
-        name: true;
-        price: true;
-        durationInMinutes: true;
-      };
-    };
-    barbershop: {
-      select: {
-        name: true;
-        address: true;
-      };
-    };
-    user: {
-      select: {
-        phone: true;
-        name: true;
-      };
-    };
-    barber: {
-      select: {
-        id: true;
-        user: {
-          select: {
-            name: true;
-          };
-        };
-      };
-    };
-  };
-}>;
-
 export interface CreateBookingResult {
   success: boolean;
-  booking?: BookingResponseDetails;
+  booking?: Booking;
   error?: string;
   newAvailableSlots?: string[];
 }
@@ -168,41 +133,21 @@ export async function getAvailableTimeSlots(
   barberId: string,
 ): Promise<string[]> {
   noStore();
-  console.log(
-    `[GET_SLOTS_DEBUG] Iniciando para data: ${selectedDate.toISOString()}`,
-  );
 
   return await db.$transaction(async (tx) => {
     const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
     });
-    if (!service) {
-      console.error("[GET_SLOTS_DEBUG] ERRO: Serviço não encontrado.");
-      return [];
-    }
-    console.log(
-      `[GET_SLOTS_DEBUG] Serviço encontrado, duração: ${service.durationInMinutes} min.`,
-    );
+    if (!service) return [];
 
     const zonedDate = toZonedTime(selectedDate, timeZone);
     const weekDay = getDay(zonedDate);
-    console.log(
-      `[GET_SLOTS_DEBUG] Data no fuso (${timeZone}): ${zonedDate.toISOString()}, Dia da semana: ${weekDay}`,
-    );
 
     const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
       where: { barbershopId_weekDay: { barbershopId, weekDay } },
     });
-    if (!barbershopWorkingHour?.isOpen) {
-      console.warn(
-        "[GET_SLOTS_DEBUG] Barbearia fechada neste dia ou horário de funcionamento não cadastrado.",
-      );
-      return [];
-    }
-    console.log(
-      `[GET_SLOTS_DEBUG] Horário de funcionamento: ${barbershopWorkingHour.openTime} - ${barbershopWorkingHour.closeTime}`,
-    );
+    if (!barbershopWorkingHour?.isOpen) return [];
 
     const start = startOfDay(zonedDate);
     const end = endOfDay(zonedDate);
@@ -215,9 +160,6 @@ export async function getAvailableTimeSlots(
       },
       include: { service: { select: { durationInMinutes: true } } },
     });
-    console.log(
-      `[GET_SLOTS_DEBUG] Encontrados ${existingBookings.length} agendamentos existentes no dia.`,
-    );
 
     const [openHour, openMinute] = barbershopWorkingHour.openTime
       .split(":")
@@ -242,21 +184,11 @@ export async function getAvailableTimeSlots(
       potentialSlots.push(currentTime);
       currentTime = addMinutes(currentTime, 15);
     }
-    console.log(
-      `[GET_SLOTS_DEBUG] Gerados ${potentialSlots.length} slots potenciais de 15 em 15 min.`,
-    );
 
     const availableSlots = potentialSlots.filter((slotStart) => {
       const slotEnd = addMinutes(slotStart, service.durationInMinutes);
-
-      if (isAfter(slotEnd, endOfWorkDay)) {
-        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (após expediente): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
-        return false;
-      }
-      if (isBefore(slotStart, nowInZone)) {
-        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (passado): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
-        return false;
-      }
+      if (isAfter(slotEnd, endOfWorkDay)) return false;
+      if (isBefore(slotStart, nowInZone)) return false;
 
       const lunchStart = barbershopWorkingHour.lunchStart
         ? setMinutes(
@@ -281,10 +213,8 @@ export async function getAvailableTimeSlots(
         lunchEnd &&
         isBefore(slotStart, lunchEnd) &&
         isAfter(slotEnd, lunchStart)
-      ) {
-        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (almoço): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
+      )
         return false;
-      }
 
       const hasConflict = existingBookings.some((booking) => {
         const bookingStart = toZonedTime(booking.date, timeZone);
@@ -292,19 +222,15 @@ export async function getAvailableTimeSlots(
           bookingStart,
           booking.service.durationInMinutes,
         );
-        const conflict =
-          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
-        // if (conflict) console.log(`[GET_SLOTS_DEBUG] FILTRADO (conflito): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
-        return conflict;
+        return (
+          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart)
+        );
       });
 
       if (hasConflict) return false;
       return true;
     });
 
-    console.log(
-      `[GET_SLOTS_DEBUG] Final: ${availableSlots.length} horários disponíveis retornados.`,
-    );
     return availableSlots.map((date) =>
       formatInTimeZone(date, timeZone, "HH:mm"),
     );
@@ -320,51 +246,38 @@ export const createBooking = async ({
   clientPhone = null,
   notes = null,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
-  try {
-    console.log(
-      `[PROD-DEBUG] Action createBooking INICIADA às ${new Date().toISOString()}`,
-    );
-    const session = await getServerSession(authOptions);
-    const bookingDate = new Date(date);
+  noStore();
 
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return { success: false, error: "Acesso não autorizado." };
+    }
+
+    const bookingDate = new Date(date);
     if (isNaN(bookingDate.getTime())) {
-      console.error("[PROD-DEBUG] ERRO: Data inválida recebida.");
       return { success: false, error: "Data inválida." };
     }
 
-    console.log(
-      "[PROD-DEBUG] Chamando getAvailableTimeSlots ANTES de criar o booking...",
-    );
     const availableSlotsBeforeBooking = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
       serviceId,
       barberId,
     );
-    console.log(
-      `[PROD-DEBUG] Horários retornados por getAvailableTimeSlots: ${availableSlotsBeforeBooking.length} slots.`,
-    );
 
     const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
-    console.log(`[PROD-DEBUG] Usuário solicitou o horário: ${requestedTime}`);
 
     if (!availableSlotsBeforeBooking.includes(requestedTime)) {
-      console.error(
-        `[PROD-DEBUG] ERRO: Horário ${requestedTime} não está na lista de disponíveis. Lista:`,
-        availableSlotsBeforeBooking,
-      );
       return {
         success: false,
-        error: "Horário não disponível. Por favor, escolha outro.",
+        error: "Horário não disponível. Por favor, atualize e escolha outro.",
       };
     }
 
-    console.log(
-      "[PROD-DEBUG] Validação OK. Criando agendamento no banco de dados...",
-    );
     const booking = await db.booking.create({
       data: {
-        userId: session?.user?.id,
+        userId: session.user.id,
         serviceId,
         date: bookingDate,
         barbershopId,
@@ -373,41 +286,31 @@ export const createBooking = async ({
         clientPhone,
         notes,
       },
-      include: {
-        service: true,
-        barbershop: true,
-        user: true,
-        barber: { include: { user: true } },
-      },
     });
-
-    console.log(
-      `[PROD-DEBUG] SUCESSO: Booking criado no DB com ID: ${booking.id}`,
-    );
 
     const newAvailableSlots = availableSlotsBeforeBooking.filter(
       (slot) => slot !== requestedTime,
     );
 
-    console.log(
-      `[PROD-DEBUG] Lista de horários atualizada em memória. Novo total: ${newAvailableSlots.length} slots.`,
-    );
-
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath("/dashboard/agendamentos");
-    if (session?.user?.id) {
+    if (session.user.id) {
       revalidatePath("/meus-agendamentos");
     }
 
-    console.log("[PROD-DEBUG] Retornando sucesso para o frontend.");
     return { success: true, booking, newAvailableSlots };
   } catch (error: unknown) {
-    console.error("[PROD-DEBUG] ERRO CRÍTICO NO BLOCO CATCH:", error);
-    let errorMessage = "Erro interno do servidor.";
-    if (error instanceof Error) {
-      errorMessage = error.message;
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return {
+        success: false,
+        error:
+          "Este horário foi agendado por outra pessoa. Por favor, atualize e escolha um novo horário.",
+      };
     }
-    return { success: false, error: errorMessage };
+    return { success: false, error: "Ocorreu um erro ao criar o agendamento." };
   }
 };
 

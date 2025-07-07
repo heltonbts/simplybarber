@@ -1,3 +1,5 @@
+// app/barbershops/[id]/page.tsx
+
 import { db } from "@/lib/prisma";
 import Image from "next/image";
 import Link from "next/link";
@@ -8,7 +10,7 @@ import ServiceItem from "@/components/service-item";
 import Sidebar from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 
-// ✅ Tipos definidos localmente
+// Tipos para os dados que passaremos como props
 type BarberForBookings = {
   id: string;
   user: {
@@ -28,16 +30,20 @@ type BarbershopWorkingHourForBookings = {
   lunchEnd: string | null;
 };
 
-// ✅ Definindo os tipos corretos para Next.js 15+
+// CORREÇÃO 1: Tipagem correta para os parâmetros da página
 interface BarbershopPageProps {
-  params: Promise<{ id: string }>;
+  params: {
+    id: string;
+  };
 }
 
+// CORREÇÃO 3: Adicionando fetchCache para garantir que os dados não usem cache
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export default async function BarbershopPage({ params }: BarbershopPageProps) {
-  // ✅ Aguardando a Promise dos params
-  const { id } = await params;
+  // CORREÇÃO 1: Acessando 'id' diretamente de 'params', sem 'await'
+  const { id } = params;
 
   const barbershop = await db.barbershop.findUnique({
     where: { id },
@@ -60,24 +66,21 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
   });
 
   if (!barbershop) {
+    // Idealmente, usar a função notFound() do Next.js aqui
     return <div>Barbearia não encontrada.</div>;
   }
 
+  // Mapeamento dos dados para o formato esperado pelo componente ServiceItem
   const adaptedBarbers: BarberForBookings[] = barbershop.Barber.map(
     (barber) => ({
       id: barber.id,
-      user: {
-        id: barber.user.id,
-        name: barber.user.name,
-        email: barber.user.email,
-        image: barber.user.image,
-      },
+      user: barber.user,
     }),
   );
 
+  // CORREÇÃO 2: Removido o 'as any'. Os tipos já são compatíveis.
   const barbershopWorkingHours: BarbershopWorkingHourForBookings[] =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    barbershop.BarbershopWorkingHour as any;
+    barbershop.BarbershopWorkingHour;
 
   return (
     <div>
