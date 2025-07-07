@@ -23,7 +23,6 @@ import {
   User,
   Prisma,
 } from "../../generated/prisma";
-import { unstable_noStore as noStore } from "next/cache";
 
 export interface CreateBookingInput {
   serviceId: string;
@@ -135,8 +134,6 @@ export async function getAvailableTimeSlots(
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
-  noStore();
-
   const zonedDate = toZonedTime(selectedDate, timeZone);
   const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
   const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
@@ -153,9 +150,7 @@ export async function getAvailableTimeSlots(
         },
       },
       include: {
-        service: {
-          select: { durationInMinutes: true },
-        },
+        service: { select: { durationInMinutes: true } },
       },
     }),
     db.barbershopService.findUnique({
@@ -167,51 +162,64 @@ export async function getAvailableTimeSlots(
   if (!service) return [];
 
   const bookingsFromDb = dbBookings.map((b) => ({
-    date: startOfMinute(setMilliseconds(new Date(b.date), 0)),
+    date: b.date,
     duration: b.service.durationInMinutes,
   }));
 
-  const bookingsFromKv = (cachedData as string[]).map((item) => {
-    const parsed = JSON.parse(item) as { date: string; duration: number };
-    return {
-      date: startOfMinute(setMilliseconds(new Date(parsed.date), 0)),
-      duration: parsed.duration,
-    };
+  const bookingsFromKv = (cachedData as string[]).flatMap((item) => {
+    try {
+      const parsed = JSON.parse(item);
+      return [
+        {
+          date: new Date(parsed.date),
+          duration: parsed.duration,
+        },
+      ];
+    } catch {
+      return [];
+    }
   });
 
-  const combinedBookingsMap = new Map<
-    number,
-    { date: Date; duration: number }
-  >();
-  [...bookingsFromKv, ...bookingsFromDb].forEach((b) =>
-    combinedBookingsMap.set(b.date.getTime(), b),
-  );
-
-  const combinedBookings = Array.from(combinedBookingsMap.values());
+  const combinedBookings = [...bookingsFromDb, ...bookingsFromKv];
 
   const weekDay = getDay(zonedDate);
-  const barbershopWorkingHour = await db.barbershopWorkingHour.findUnique({
-    where: { barbershopId_weekDay: { barbershopId, weekDay } },
+  const workingHour = await db.barbershopWorkingHour.findUnique({
+    where: {
+      barbershopId_weekDay: {
+        barbershopId,
+        weekDay,
+      },
+    },
   });
 
-  if (!barbershopWorkingHour?.isOpen) return [];
+  if (!workingHour || !workingHour.isOpen) return [];
 
-  const [openHour, openMinute] = barbershopWorkingHour.openTime
-    .split(":")
-    .map(Number);
-  const [closeHour, closeMinute] = barbershopWorkingHour.closeTime
-    .split(":")
-    .map(Number);
-
+  const [openHour, openMinute] = workingHour.openTime.split(":").map(Number);
+  const [closeHour, closeMinute] = workingHour.closeTime.split(":").map(Number);
   const startOfWorkDay = setMinutes(setHours(zonedDate, openHour), openMinute);
   const endOfWorkDay = setMinutes(setHours(zonedDate, closeHour), closeMinute);
+
+  const lunchStart = workingHour.lunchStart
+    ? setMinutes(
+        setHours(zonedDate, Number(workingHour.lunchStart.split(":")[0])),
+        Number(workingHour.lunchStart.split(":")[1]),
+      )
+    : null;
+
+  const lunchEnd = workingHour.lunchEnd
+    ? setMinutes(
+        setHours(zonedDate, Number(workingHour.lunchEnd.split(":")[0])),
+        Number(workingHour.lunchEnd.split(":")[1]),
+      )
+    : null;
+
   const nowInZone = toZonedTime(new Date(), timeZone);
 
   const potentialSlots: Date[] = [];
   let currentTime = startOfWorkDay;
 
   while (isBefore(currentTime, endOfWorkDay)) {
-    potentialSlots.push(startOfMinute(setMilliseconds(currentTime, 0)));
+    potentialSlots.push(currentTime);
     currentTime = addMinutes(currentTime, 15);
   }
 
@@ -221,46 +229,27 @@ export async function getAvailableTimeSlots(
     if (isAfter(slotEnd, endOfWorkDay) || isBefore(slotStart, nowInZone))
       return false;
 
-    const lunchStart = barbershopWorkingHour.lunchStart
-      ? setMinutes(
-          setHours(
-            zonedDate,
-            Number(barbershopWorkingHour.lunchStart.split(":")[0]),
-          ),
-          Number(barbershopWorkingHour.lunchStart.split(":")[1]),
-        )
-      : null;
-
-    const lunchEnd = barbershopWorkingHour.lunchEnd
-      ? setMinutes(
-          setHours(
-            zonedDate,
-            Number(barbershopWorkingHour.lunchEnd.split(":")[0]),
-          ),
-          Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
-        )
-      : null;
-
     if (
       lunchStart &&
       lunchEnd &&
-      isBefore(slotStart, lunchEnd) &&
-      isAfter(slotEnd, lunchStart)
+      isBefore(slotEnd, lunchStart) === false &&
+      isAfter(slotStart, lunchEnd) === false
     ) {
       return false;
     }
 
-    const hasConflict = combinedBookings.some((booking) => {
-      const bookingStart = booking.date;
+    const conflict = combinedBookings.some((booking) => {
+      const bookingStart = toZonedTime(booking.date, timeZone);
       const bookingEnd = addMinutes(bookingStart, booking.duration);
+
       return isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
     });
 
-    return !hasConflict;
+    return !conflict;
   });
 
-  return availableSlots.map((date) =>
-    formatInTimeZone(date, timeZone, "HH:mm"),
+  return availableSlots.map((slot) =>
+    formatInTimeZone(slot, timeZone, "HH:mm"),
   );
 }
 
@@ -273,8 +262,6 @@ export const createBooking = async ({
   clientPhone,
   notes,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
-  noStore();
-
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return { success: false, error: "Acesso não autorizado." };
@@ -291,11 +278,8 @@ export const createBooking = async ({
       select: { durationInMinutes: true },
     });
 
-    if (!service) {
-      return { success: false, error: "Serviço não encontrado." };
-    }
+    if (!service) return { success: false, error: "Serviço não encontrado." };
 
-    // Revalida os horários disponíveis
     const availableSlots = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
@@ -312,7 +296,6 @@ export const createBooking = async ({
       };
     }
 
-    // Cria o agendamento no banco
     const booking = await db.booking.create({
       data: {
         userId: session.user.id,
@@ -326,7 +309,6 @@ export const createBooking = async ({
       },
     });
 
-    // Adiciona ao cache
     const zonedDate = toZonedTime(booking.date, timeZone);
     const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
     const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
@@ -337,7 +319,7 @@ export const createBooking = async ({
 
     const pipe = kv.pipeline();
     pipe.sadd(kvKey, cacheValue);
-    pipe.expire(kvKey, 900); // expira em 15 minutos
+    pipe.expire(kvKey, 900); // 15 minutos
     await pipe.exec();
 
     const newAvailableSlots = await getAvailableTimeSlots(
@@ -347,7 +329,6 @@ export const createBooking = async ({
       barberId,
     );
 
-    // Revalida as rotas
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath(`/meus-agendamentos`);
     revalidatePath(`/dashboard/agendamentos`);
@@ -372,6 +353,7 @@ export const createBooking = async ({
     };
   }
 };
+
 export async function deleteBooking(bookingId: string) {
   const session = await getServerSession(authOptions);
 

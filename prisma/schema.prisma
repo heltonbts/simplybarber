@@ -151,7 +151,7 @@ model Booking {
   notes        String?
 
   barber   Barber @relation(fields: [barberId], references: [id])
-  barberId String @default("545454454545551")
+  barberId String
 
   @@unique([barberId, date])
 }
