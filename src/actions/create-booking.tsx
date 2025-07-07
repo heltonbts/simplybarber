@@ -16,7 +16,6 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
-import { sendExternalMessage } from "./send-external-message";
 import {
   Prisma,
   Booking,
@@ -166,20 +165,41 @@ export async function getAvailableTimeSlots(
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
+  console.log(
+    `[GET_SLOTS_DEBUG] Iniciando para data: ${selectedDate.toISOString()}`,
+  );
+
   return await db.$transaction(async (tx) => {
     const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
     });
-    if (!service) return [];
+    if (!service) {
+      console.error("[GET_SLOTS_DEBUG] ERRO: Serviço não encontrado.");
+      return [];
+    }
+    console.log(
+      `[GET_SLOTS_DEBUG] Serviço encontrado, duração: ${service.durationInMinutes} min.`,
+    );
 
     const zonedDate = toZonedTime(selectedDate, timeZone);
     const weekDay = getDay(zonedDate);
+    console.log(
+      `[GET_SLOTS_DEBUG] Data no fuso (${timeZone}): ${zonedDate.toISOString()}, Dia da semana: ${weekDay}`,
+    );
 
     const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
       where: { barbershopId_weekDay: { barbershopId, weekDay } },
     });
-    if (!barbershopWorkingHour?.isOpen) return [];
+    if (!barbershopWorkingHour?.isOpen) {
+      console.warn(
+        "[GET_SLOTS_DEBUG] Barbearia fechada neste dia ou horário de funcionamento não cadastrado.",
+      );
+      return [];
+    }
+    console.log(
+      `[GET_SLOTS_DEBUG] Horário de funcionamento: ${barbershopWorkingHour.openTime} - ${barbershopWorkingHour.closeTime}`,
+    );
 
     const start = startOfDay(zonedDate);
     const end = endOfDay(zonedDate);
@@ -192,6 +212,9 @@ export async function getAvailableTimeSlots(
       },
       include: { service: { select: { durationInMinutes: true } } },
     });
+    console.log(
+      `[GET_SLOTS_DEBUG] Encontrados ${existingBookings.length} agendamentos existentes no dia.`,
+    );
 
     const [openHour, openMinute] = barbershopWorkingHour.openTime
       .split(":")
@@ -208,26 +231,6 @@ export async function getAvailableTimeSlots(
       setHours(zonedDate, closeHour),
       closeMinute,
     );
-
-    const lunchStart = barbershopWorkingHour.lunchStart
-      ? setMinutes(
-          setHours(
-            zonedDate,
-            Number(barbershopWorkingHour.lunchStart.split(":")[0]),
-          ),
-          Number(barbershopWorkingHour.lunchStart.split(":")[1]),
-        )
-      : null;
-    const lunchEnd = barbershopWorkingHour.lunchEnd
-      ? setMinutes(
-          setHours(
-            zonedDate,
-            Number(barbershopWorkingHour.lunchEnd.split(":")[0]),
-          ),
-          Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
-        )
-      : null;
-
     const nowInZone = toZonedTime(new Date(), timeZone);
 
     const potentialSlots: Date[] = [];
@@ -236,18 +239,49 @@ export async function getAvailableTimeSlots(
       potentialSlots.push(currentTime);
       currentTime = addMinutes(currentTime, 15);
     }
+    console.log(
+      `[GET_SLOTS_DEBUG] Gerados ${potentialSlots.length} slots potenciais de 15 em 15 min.`,
+    );
 
     const availableSlots = potentialSlots.filter((slotStart) => {
       const slotEnd = addMinutes(slotStart, service.durationInMinutes);
-      if (isAfter(slotEnd, endOfWorkDay)) return false;
-      if (isBefore(slotStart, nowInZone)) return false;
+
+      if (isAfter(slotEnd, endOfWorkDay)) {
+        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (após expediente): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
+        return false;
+      }
+      if (isBefore(slotStart, nowInZone)) {
+        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (passado): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
+        return false;
+      }
+
+      const lunchStart = barbershopWorkingHour.lunchStart
+        ? setMinutes(
+            setHours(
+              zonedDate,
+              Number(barbershopWorkingHour.lunchStart.split(":")[0]),
+            ),
+            Number(barbershopWorkingHour.lunchStart.split(":")[1]),
+          )
+        : null;
+      const lunchEnd = barbershopWorkingHour.lunchEnd
+        ? setMinutes(
+            setHours(
+              zonedDate,
+              Number(barbershopWorkingHour.lunchEnd.split(":")[0]),
+            ),
+            Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
+          )
+        : null;
       if (
         lunchStart &&
         lunchEnd &&
         isBefore(slotStart, lunchEnd) &&
         isAfter(slotEnd, lunchStart)
-      )
+      ) {
+        // console.log(`[GET_SLOTS_DEBUG] FILTRADO (almoço): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
         return false;
+      }
 
       const hasConflict = existingBookings.some((booking) => {
         const bookingStart = toZonedTime(booking.date, timeZone);
@@ -255,15 +289,19 @@ export async function getAvailableTimeSlots(
           bookingStart,
           booking.service.durationInMinutes,
         );
-        return (
-          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart)
-        );
+        const conflict =
+          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
+        // if (conflict) console.log(`[GET_SLOTS_DEBUG] FILTRADO (conflito): ${formatInTimeZone(slotStart, timeZone, "HH:mm")}`);
+        return conflict;
       });
 
       if (hasConflict) return false;
       return true;
     });
 
+    console.log(
+      `[GET_SLOTS_DEBUG] Final: ${availableSlots.length} horários disponíveis retornados.`,
+    );
     return availableSlots.map((date) =>
       formatInTimeZone(date, timeZone, "HH:mm"),
     );
@@ -280,30 +318,47 @@ export const createBooking = async ({
   notes = null,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   try {
+    console.log(
+      `[PROD-DEBUG] Action createBooking INICIADA às ${new Date().toISOString()}`,
+    );
     const session = await getServerSession(authOptions);
     const bookingDate = new Date(date);
 
     if (isNaN(bookingDate.getTime())) {
+      console.error("[PROD-DEBUG] ERRO: Data inválida recebida.");
       return { success: false, error: "Data inválida." };
     }
 
+    console.log(
+      "[PROD-DEBUG] Chamando getAvailableTimeSlots ANTES de criar o booking...",
+    );
     const availableSlotsBeforeBooking = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
       serviceId,
       barberId,
     );
+    console.log(
+      `[PROD-DEBUG] Horários retornados por getAvailableTimeSlots: ${availableSlotsBeforeBooking.length} slots.`,
+    );
 
     const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
+    console.log(`[PROD-DEBUG] Usuário solicitou o horário: ${requestedTime}`);
 
     if (!availableSlotsBeforeBooking.includes(requestedTime)) {
+      console.error(
+        `[PROD-DEBUG] ERRO: Horário ${requestedTime} não está na lista de disponíveis. Lista:`,
+        availableSlotsBeforeBooking,
+      );
       return {
         success: false,
-        error:
-          "Horário não disponível. Alguém pode ter agendado. Por favor, escolha outro.",
+        error: "Horário não disponível. Por favor, escolha outro.",
       };
     }
 
+    console.log(
+      "[PROD-DEBUG] Validação OK. Criando agendamento no banco de dados...",
+    );
     const booking = await db.booking.create({
       data: {
         userId: session?.user?.id,
@@ -323,34 +378,17 @@ export const createBooking = async ({
       },
     });
 
+    console.log(
+      `[PROD-DEBUG] SUCESSO: Booking criado no DB com ID: ${booking.id}`,
+    );
+
     const newAvailableSlots = availableSlotsBeforeBooking.filter(
       (slot) => slot !== requestedTime,
     );
 
-    const barbershopName = booking.barbershop.name;
-    const serviceName = booking.service.name;
-    const barberName = booking.barber.user.name || "um barbeiro";
-    const formattedBookingDateForMessage = formatInTimeZone(
-      booking.date,
-      timeZone,
-      "dd/MM/yyyy 'às' HH:mm",
-      {
-        locale: ptBR,
-      },
+    console.log(
+      `[PROD-DEBUG] Lista de horários atualizada em memória. Novo total: ${newAvailableSlots.length} slots.`,
     );
-    const baseMessage = `Agendamento Confirmado! Você marcou ${serviceName} na ${barbershopName} com ${barberName} para ${formattedBookingDateForMessage}.`;
-
-    if (booking.user?.phone && booking.user.phone.length > 0) {
-      await sendExternalMessage({
-        to: booking.user.phone,
-        message: baseMessage,
-      });
-    } else if (booking.clientPhone && booking.clientPhone.length > 0) {
-      await sendExternalMessage({
-        to: booking.clientPhone,
-        message: baseMessage,
-      });
-    }
 
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath("/dashboard/agendamentos");
@@ -358,9 +396,10 @@ export const createBooking = async ({
       revalidatePath("/meus-agendamentos");
     }
 
+    console.log("[PROD-DEBUG] Retornando sucesso para o frontend.");
     return { success: true, booking, newAvailableSlots };
   } catch (error: unknown) {
-    console.error("❌ Erro ao criar agendamento:", error);
+    console.error("[PROD-DEBUG] ERRO CRÍTICO NO BLOCO CATCH:", error);
     let errorMessage = "Erro interno do servidor.";
     if (error instanceof Error) {
       errorMessage = error.message;
