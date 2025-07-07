@@ -139,8 +139,7 @@ export async function getAvailableTimeSlots(
   const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
   const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
 
-  // 2. Busca no cache rápido (KV) e no banco de dados ao mesmo tempo
-  const [cachedBookingTimes, dbBookings, service] = await Promise.all([
+  const [cachedData, dbBookings, service] = await Promise.all([
     kv.smembers(kvKey),
     db.booking.findMany({
       where: {
@@ -158,31 +157,38 @@ export async function getAvailableTimeSlots(
 
   if (!service) return [];
 
-  // 3. Combina os resultados para ter a visão mais completa e atualizada
-  const dbBookingTimes = new Set(dbBookings.map((b) => b.date.toISOString()));
-  const allBookedTimes = new Set([...cachedBookingTimes, ...dbBookingTimes]);
+  const bookingsFromDb = dbBookings.map((b) => ({
+    date: b.date,
+    duration: b.service.durationInMinutes,
+  }));
 
-  const combinedBookings = Array.from(allBookedTimes).map((isoString) => {
-    const dbEquivalent = dbBookings.find(
-      (b) => b.date.toISOString() === isoString,
-    );
+  const bookingsFromKv = (cachedData as string[]).map((item) => {
+    const parsed = JSON.parse(item) as { date: string; duration: number };
     return {
-      date: new Date(isoString),
-      service: {
-        durationInMinutes:
-          dbEquivalent?.service.durationInMinutes || service.durationInMinutes,
-      },
+      date: new Date(parsed.date),
+      duration: parsed.duration,
     };
   });
 
-  // O resto da sua lógica de filtragem continua a mesma, mas agora usa combinedBookings
+  const combinedBookingsMap = new Map<
+    string,
+    { date: Date; duration: number }
+  >();
+  bookingsFromKv.forEach((b) =>
+    combinedBookingsMap.set(b.date.toISOString(), b),
+  );
+  bookingsFromDb.forEach((b) =>
+    combinedBookingsMap.set(b.date.toISOString(), b),
+  );
+
+  const combinedBookings = Array.from(combinedBookingsMap.values());
+
   const weekDay = getDay(zonedDate);
   const barbershopWorkingHour = await db.barbershopWorkingHour.findUnique({
     where: { barbershopId_weekDay: { barbershopId, weekDay } },
   });
   if (!barbershopWorkingHour?.isOpen) return [];
 
-  // ... (código para gerar potentialSlots) ...
   const [openHour, openMinute] = barbershopWorkingHour.openTime
     .split(":")
     .map(Number);
@@ -192,6 +198,7 @@ export async function getAvailableTimeSlots(
   const startOfWorkDay = setMinutes(setHours(zonedDate, openHour), openMinute);
   const endOfWorkDay = setMinutes(setHours(zonedDate, closeHour), closeMinute);
   const nowInZone = toZonedTime(new Date(), timeZone);
+
   const potentialSlots: Date[] = [];
   let currentTime = startOfWorkDay;
   while (isBefore(currentTime, endOfWorkDay)) {
@@ -204,12 +211,35 @@ export async function getAvailableTimeSlots(
     if (isAfter(slotEnd, endOfWorkDay) || isBefore(slotStart, nowInZone))
       return false;
 
+    const lunchStart = barbershopWorkingHour.lunchStart
+      ? setMinutes(
+          setHours(
+            zonedDate,
+            Number(barbershopWorkingHour.lunchStart.split(":")[0]),
+          ),
+          Number(barbershopWorkingHour.lunchStart.split(":")[1]),
+        )
+      : null;
+    const lunchEnd = barbershopWorkingHour.lunchEnd
+      ? setMinutes(
+          setHours(
+            zonedDate,
+            Number(barbershopWorkingHour.lunchEnd.split(":")[0]),
+          ),
+          Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
+        )
+      : null;
+    if (
+      lunchStart &&
+      lunchEnd &&
+      isBefore(slotStart, lunchEnd) &&
+      isAfter(slotEnd, lunchStart)
+    )
+      return false;
+
     const hasConflict = combinedBookings.some((booking) => {
       const bookingStart = toZonedTime(booking.date, timeZone);
-      const bookingEnd = addMinutes(
-        bookingStart,
-        booking.service.durationInMinutes,
-      );
+      const bookingEnd = addMinutes(bookingStart, booking.duration);
       return isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
     });
 
@@ -229,13 +259,39 @@ export const createBooking = async ({
   barberId,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   noStore();
+
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id)
+  if (!session?.user?.id) {
     return { success: false, error: "Acesso não autorizado." };
+  }
 
   const bookingDate = new Date(date);
+  if (isNaN(bookingDate.getTime())) {
+    return { success: false, error: "Data inválida." };
+  }
 
   try {
+    const service = await db.barbershopService.findUnique({
+      where: { id: serviceId },
+      select: { durationInMinutes: true },
+    });
+    if (!service) throw new Error("Serviço não encontrado.");
+
+    const availableSlotsBeforeBooking = await getAvailableTimeSlots(
+      barbershopId,
+      bookingDate,
+      serviceId,
+      barberId,
+    );
+    const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
+
+    if (!availableSlotsBeforeBooking.includes(requestedTime)) {
+      return {
+        success: false,
+        error: "Horário não disponível. Por favor, atualize e escolha outro.",
+      };
+    }
+
     const booking = await db.booking.create({
       data: {
         userId: session.user.id,
@@ -246,26 +302,24 @@ export const createBooking = async ({
       },
     });
 
-    // 4. Após o sucesso, salva a informação no cache rápido (KV)
     const zonedDate = toZonedTime(booking.date, timeZone);
     const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
     const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
+    const cacheValue = JSON.stringify({
+      date: booking.date.toISOString(),
+      duration: service.durationInMinutes,
+    });
 
-    await kv.sadd(kvKey, booking.date.toISOString());
-    // Define um tempo de expiração para a chave (ex: 15 minutos) para não acumular lixo
-    await kv.expire(kvKey, 900);
+    const pipe = kv.pipeline();
+    pipe.sadd(kvKey, cacheValue);
+    pipe.expire(kvKey, 900); // 15 minutos
+    await pipe.exec();
 
-    // A lógica de "read-once, filter-in-memory" não é mais necessária aqui,
-    // pois a próxima leitura em getAvailableTimeSlots já usará o KV.
-    // Mas podemos mantê-la para a resposta imediata ser mais rápida.
-    const availableSlotsBeforeBooking = await getAvailableTimeSlots(
+    const newAvailableSlots = await getAvailableTimeSlots(
       barbershopId,
       bookingDate,
       serviceId,
       barberId,
-    );
-    const newAvailableSlots = availableSlotsBeforeBooking.filter(
-      (slot) => slot !== formatInTimeZone(bookingDate, timeZone, "HH:mm"),
     );
 
     revalidatePath(`/barbershops/${barbershopId}`);
