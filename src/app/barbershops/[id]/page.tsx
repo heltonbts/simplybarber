@@ -1,5 +1,4 @@
 // app/barbershops/[id]/page.tsx
-
 import { db } from "@/lib/prisma";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,38 +9,15 @@ import ServiceItem from "@/components/service-item";
 import Sidebar from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 
-// Tipos para os dados que passaremos como props
-type BarberForBookings = {
-  id: string;
-  user: {
-    id: string;
-    name: string | null;
-    email: string;
-    image: string | null;
-  };
-};
-
-type BarbershopWorkingHourForBookings = {
-  weekDay: number;
-  isOpen: boolean;
-  openTime: string;
-  closeTime: string;
-  lunchStart: string | null;
-  lunchEnd: string | null;
-};
-
-// CORREÇÃO 1: Tipagem correta para os parâmetros da página
-interface BarbershopPageProps {
-  params: Promise<{ id: string }>;
-}
-
-// CORREÇÃO 3: Adicionando fetchCache para garantir que os dados não usem cache
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-export default async function BarbershopPage({ params }: BarbershopPageProps) {
-  // CORREÇÃO 1: Acessando 'id' diretamente de 'params', sem 'await'
-  const { id } = await params;
+export default async function BarbershopPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const { id } = params;
 
   const barbershop = await db.barbershop.findUnique({
     where: { id },
@@ -64,21 +40,15 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
   });
 
   if (!barbershop) {
-    // Idealmente, usar a função notFound() do Next.js aqui
     return <div>Barbearia não encontrada.</div>;
   }
 
-  // Mapeamento dos dados para o formato esperado pelo componente ServiceItem
-  const adaptedBarbers: BarberForBookings[] = barbershop.Barber.map(
-    (barber) => ({
-      id: barber.id,
-      user: barber.user,
-    }),
-  );
+  const adaptedBarbers = barbershop.Barber.map((barber) => ({
+    id: barber.id,
+    user: barber.user,
+  }));
 
-  // CORREÇÃO 2: Removido o 'as any'. Os tipos já são compatíveis.
-  const barbershopWorkingHours: BarbershopWorkingHourForBookings[] =
-    barbershop.BarbershopWorkingHour;
+  const barbershopWorkingHours = barbershop.BarbershopWorkingHour;
 
   return (
     <div>
