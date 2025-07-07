@@ -169,28 +169,29 @@ const ServiceItem = ({
     try {
       const hours = Number(data.time.split(":")[0]);
       const minutes = Number(data.time.split(":")[1]);
-
-      const finalBookingDate = setMinutes(setHours(data.date, hours), minutes); // Combina data e hora
+      const finalBookingDate = setMinutes(setHours(data.date, hours), minutes);
 
       const result = await createBooking({
         serviceId: service.id,
         barbershopId: barbershop.id,
-        barberId: data.barberId, // Passa o barbeiro selecionado
+        barberId: data.barberId,
         date: finalBookingDate,
-        // clientName e clientPhone não são necessários aqui (para cliente agendando para si)
-        // A server action createBooking lidará com o userId da sessão.
       });
 
       if (result && result.success) {
         toast.success("Reservado com Sucesso!");
-        setBookingSheetIsOpen(false);
-        // Resetar o formulário para o estado inicial após a reserva bem-sucedida
+
+        // NÃO FECHE O PAINEL AINDA, MOSTRE AO USUÁRIO A ATUALIZAÇÃO
+        // setBookingSheetIsOpen(false);
+
+        // ATUALIZE OS HORÁRIOS COM A LISTA FRESCA VINDA DO BACKEND
+        setAvailableSlots(result.newAvailableSlots || []);
+
+        // RESETA A SELEÇÃO DE HORÁRIO, MAS MANTÉM O DIA E O BARBEIRO
         form.reset({
-          barberId: UNSELECTED_PLACEHOLDER_VALUE,
-          date: undefined, // Ou selectedDay se você quiser manter a data no calendário
-          time: UNSELECTED_PLACEHOLDER_VALUE,
+          ...form.getValues(), // Mantém os valores atuais
+          time: UNSELECTED_PLACEHOLDER_VALUE, // Apenas reseta o horário
         });
-        setAvailableSlots([]); // Limpar slots
       } else {
         toast.error(result?.error || "Erro ao criar reserva");
       }
