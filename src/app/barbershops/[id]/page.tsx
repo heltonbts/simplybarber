@@ -32,9 +32,7 @@ type BarbershopWorkingHourForBookings = {
 
 // CORREÇÃO 1: Tipagem correta para os parâmetros da página
 interface BarbershopPageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
 // CORREÇÃO 3: Adicionando fetchCache para garantir que os dados não usem cache
@@ -43,7 +41,7 @@ export const fetchCache = "force-no-store";
 
 export default async function BarbershopPage({ params }: BarbershopPageProps) {
   // CORREÇÃO 1: Acessando 'id' diretamente de 'params', sem 'await'
-  const { id } = params;
+  const { id } = await params;
 
   const barbershop = await db.barbershop.findUnique({
     where: { id },
