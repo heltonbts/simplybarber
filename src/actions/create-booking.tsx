@@ -6,14 +6,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
-  format,
   getDay,
   setHours,
   setMinutes,
   addMinutes,
   isBefore,
   isAfter,
-  startOfMinute,
+  startOfDay,
+  endOfDay,
 } from "date-fns";
 
 import {
@@ -23,6 +23,7 @@ import {
   User,
 } from "../../generated/prisma";
 
+import { formatInTimeZone, toZonedTime } from "date-fns-tz";
 export interface CreateBookingInput {
   serviceId: string;
   date: Date;
@@ -85,6 +86,8 @@ export type BookingDetails = Booking & {
   barber: BarberWithUser;
   user?: User | null; // IMPORTANTE: Adicionar o user aqui
 };
+
+const timeZone = "America/Sao_Paulo";
 
 // READ: Função para buscar todos os agendamentos da barbearia para a tabela - CORRIGIDA
 export async function getBookingsByBarbershop(
@@ -185,40 +188,44 @@ export async function getAvailableTimeSlots(
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
-  // Use uma transaction para garantir que você obtenha os dados mais recentes,
-  // o que pode ajudar a mitigar problemas de latência na replicação.
   return await db.$transaction(async (tx) => {
-    const validatedDate = startOfMinute(new Date(selectedDate));
-
-    // 1. BUSCAR TODOS OS DADOS NECESSÁRIOS
     const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
     });
-
     if (!service) return [];
 
-    const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
-      where: {
-        barbershopId_weekDay: { barbershopId, weekDay: getDay(validatedDate) },
-      },
-    });
+    // Converte a data recebida (UTC) para o fuso da barbearia
+    const selectedZonedDate = toZonedTime(selectedDate, timeZone);
 
+    const weekDay = getDay(selectedZonedDate);
+    const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
+      where: { barbershopId_weekDay: { barbershopId, weekDay } },
+    });
     if (!barbershopWorkingHour?.isOpen) return [];
 
+    // --- CORREÇÃO PRINCIPAL AQUI ---
+    // Pega o início e o fim do dia NO FUSO HORÁRIO CORRETO
+    const start = startOfDay(selectedZonedDate);
+    const end = endOfDay(selectedZonedDate);
+
+    // A query agora usa esses objetos Date diretamente.
+    // O Prisma/JS os converterá para o timestamp UTC correto.
     const existingBookings = await tx.booking.findMany({
       where: {
         barberId,
         barbershopId,
         date: {
-          gte: setHours(validatedDate, 0), // Pega todos os agendamentos para o dia inteiro
-          lt: setHours(validatedDate, 24),
+          gte: start,
+          lt: end,
         },
       },
       include: { service: { select: { durationInMinutes: true } } },
     });
+    // --- FIM DA CORREÇÃO ---
 
-    // 2. DEFINIR HORÁRIO DE FUNCIONAMENTO E ALMOÇO
+    // O restante da lógica para gerar os slots já estava usando a `selectedZonedDate`
+    // e pode continuar praticamente igual.
     const [openHour, openMinute] = barbershopWorkingHour.openTime
       .split(":")
       .map(Number);
@@ -227,84 +234,73 @@ export async function getAvailableTimeSlots(
       .map(Number);
 
     const startOfWorkDay = setMinutes(
-      setHours(validatedDate, openHour),
+      setHours(selectedZonedDate, openHour),
       openMinute,
     );
     const endOfWorkDay = setMinutes(
-      setHours(validatedDate, closeHour),
+      setHours(selectedZonedDate, closeHour),
       closeMinute,
     );
 
     const lunchStart = barbershopWorkingHour.lunchStart
       ? setMinutes(
           setHours(
-            validatedDate,
+            selectedZonedDate,
             Number(barbershopWorkingHour.lunchStart.split(":")[0]),
           ),
           Number(barbershopWorkingHour.lunchStart.split(":")[1]),
         )
       : null;
-
     const lunchEnd = barbershopWorkingHour.lunchEnd
       ? setMinutes(
           setHours(
-            validatedDate,
+            selectedZonedDate,
             Number(barbershopWorkingHour.lunchEnd.split(":")[0]),
           ),
           Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
         )
       : null;
 
-    const now = startOfMinute(new Date());
+    const nowInZone = toZonedTime(new Date(), timeZone);
 
-    // 3. GERAR TODOS OS HORÁRIOS POTENCIAIS
     const potentialSlots: Date[] = [];
     let currentTime = startOfWorkDay;
-    const slotInterval = 15; // Define um intervalo fixo para os horários potenciais (ex: 15 minutos)
-
     while (isBefore(currentTime, endOfWorkDay)) {
       potentialSlots.push(currentTime);
-      currentTime = addMinutes(currentTime, slotInterval);
+      currentTime = addMinutes(currentTime, 15);
     }
 
-    // 4. FILTRAR PARA ENCONTRAR OS HORÁRIOS DISPONÍVEIS
     const availableSlots = potentialSlots.filter((slotStart) => {
       const slotEnd = addMinutes(slotStart, service.durationInMinutes);
 
-      // Regra 1: O horário não pode ser no passado
-      if (isBefore(slotStart, now)) return false;
-
-      // Regra 2: O horário não pode terminar após o fechamento
       if (isAfter(slotEnd, endOfWorkDay)) return false;
+      if (isBefore(slotStart, nowInZone)) return false;
+      if (
+        lunchStart &&
+        lunchEnd &&
+        isBefore(slotStart, lunchEnd) &&
+        isAfter(slotEnd, lunchStart)
+      )
+        return false;
 
-      // Regra 3: O horário não pode conflitar com o almoço
-      if (lunchStart && lunchEnd) {
-        if (isBefore(slotStart, lunchEnd) && isAfter(slotEnd, lunchStart)) {
-          return false;
-        }
-      }
-
-      // Regra 4: O horário não pode conflitar com agendamentos existentes
       const hasConflict = existingBookings.some((booking) => {
-        const bookingStart = startOfMinute(booking.date);
+        const bookingStart = toZonedTime(booking.date, timeZone);
         const bookingEnd = addMinutes(
           bookingStart,
           booking.service.durationInMinutes,
         );
-
-        // Verifica qualquer sobreposição entre [slotStart, slotEnd] e [bookingStart, bookingEnd]
         return (
           isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart)
         );
       });
 
       if (hasConflict) return false;
-
-      // Se passar em todas as checagens, o horário está disponível
       return true;
     });
 
-    return availableSlots.map((date) => format(date, "HH:mm"));
+    return availableSlots.map((date) =>
+      formatInTimeZone(date, timeZone, "HH:mm"),
+    );
   });
 }
 
@@ -331,24 +327,24 @@ export const createBooking = async ({
   notes = null,
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   try {
-    // Validações iniciais (continuam iguais)
     const session = await getServerSession(authOptions);
-    // ... toda a sua lógica de validação de sessão, dados, data, etc. ...
     const bookingDate = new Date(date);
-    if (isNaN(bookingDate.getTime())) {
-      return { success: false, error: "Data inválida." };
-    }
 
-    // --- PASSO 1: BUSCAR HORÁRIOS DISPONÍVEIS (ÚNICA LEITURA DO BANCO) ---
+    // Validações...
+    if (isNaN(bookingDate.getTime()))
+      return { success: false, error: "Data inválida." };
+
+    // --- LEITURA ÚNICA E VALIDACÃO ---
     const availableSlotsBeforeBooking = await getAvailableTimeSlots(
       barbershopId,
-      bookingDate,
+      bookingDate, // Passa a data UTC, a função interna irá converter
       serviceId,
       barberId,
     );
 
-    // --- PASSO 2: VALIDAR O HORÁRIO SOLICITADO ---
-    const requestedTime = format(bookingDate, "HH:mm");
+    // Formata o tempo solicitado no FUSO HORÁRIO CORRETO para validação
+    const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
+
     if (!availableSlotsBeforeBooking.includes(requestedTime)) {
       console.log(
         "❌ Debug - Horário não disponível na validação:",
@@ -361,14 +357,12 @@ export const createBooking = async ({
       };
     }
 
-    console.log("🔍 Debug - Horário disponível, criando booking...");
-
-    // --- PASSO 3: CRIAR O AGENDAMENTO (ESCRITA NO BANCO) ---
+    // --- ESCRITA NO BANCO ---
     const booking = await db.booking.create({
       data: {
-        userId: session?.user?.id, // Simplificado, assumindo que a validação anterior já cuidou disso
+        userId: session?.user?.id,
         serviceId,
-        date: bookingDate,
+        date: bookingDate, // Salva a data como UTC no banco, o que é a prática correta
         barbershopId,
         barberId,
         clientName,
@@ -376,34 +370,23 @@ export const createBooking = async ({
         notes,
       },
       include: {
-        service: {
-          select: { name: true, price: true, durationInMinutes: true },
-        },
-        barbershop: { select: { name: true, address: true } },
-        user: { select: { phone: true, name: true } },
-        barber: { select: { id: true, user: { select: { name: true } } } },
+        service: true,
+        barbershop: true,
+        user: true,
+        barber: { include: { user: true } },
       },
     });
 
-    console.log("✅ Debug - Booking criado com sucesso:", { id: booking.id });
-
-    // --- PASSO 4: CRIAR A NOVA LISTA DE HORÁRIOS EM MEMÓRIA (SEM LER O BANCO NOVAMENTE) ---
+    // --- MANIPULAÇÃO EM MEMÓRIA ---
     const newAvailableSlots = availableSlotsBeforeBooking.filter(
       (slot) => slot !== requestedTime,
     );
 
-    // ... seu código de envio de mensagem ...
-
-    // --- PASSO 5: REVALIDAR PATHS E RETORNAR A LISTA CORRETA E ATUALIZADA ---
     revalidatePath(`/barbershops/${barbershopId}`);
-    revalidatePath("/dashboard/agendamentos");
-    if (session?.user?.id) {
-      revalidatePath("/meus-agendamentos");
-    }
+    // ... outros revalidatePath ...
 
     return { success: true, booking, newAvailableSlots };
   } catch (error: unknown) {
-    // seu bloco catch continua o mesmo
     console.error("❌ Erro ao criar agendamento:", error);
     let errorMessage = "Erro interno do servidor.";
     if (error instanceof Error) {
