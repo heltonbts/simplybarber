@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-
 "use client";
 
 import Image from "next/image";
@@ -108,57 +106,56 @@ const ServiceItem = ({
     mode: "onBlur",
   });
 
-  const selectedBarberId = form.watch("barberId");
-  const selectedDate = form.watch("date");
-
   useEffect(() => {
     const fetchSlots = async () => {
-      if (
-        !selectedBarberId ||
-        !selectedDate ||
-        selectedBarberId === UNSELECTED_PLACEHOLDER_VALUE
-      ) {
+      const barberId = form.watch("barberId");
+      const date = form.watch("date");
+
+      if (!barberId || barberId === UNSELECTED_PLACEHOLDER_VALUE || !date) {
         setAvailableSlots([]);
+        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
         return;
       }
 
       setFetchingSlots(true);
+
       try {
-        const queryParams = new URLSearchParams({
-          barbershopId: barbershop.id,
-          serviceId: service.id,
-          barberId: selectedBarberId,
-          date: selectedDate.toISOString(),
-        });
+        const dateOnly = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
+        );
 
-        const response = await fetch(`/api/slots?${queryParams.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `/api/slots?barbershopId=${barbershop.id}&serviceId=${service.id}&barberId=${barberId}&date=${dateOnly.toISOString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
 
-        if (!response.ok) {
-          throw new Error(`Falha ao buscar horários: ${response.statusText}`);
-        }
-
-        const slots: string[] = await response.json();
-
-        setAvailableSlots(slots);
-      } catch (error) {
-        console.error("Erro ao buscar horários via API:", error);
-        toast.error("Falha ao carregar horários disponíveis.");
-        setAvailableSlots([]);
-      } finally {
+        if (!res.ok) throw new Error("Erro ao buscar horários disponíveis");
+        const data = await res.json();
+        setAvailableSlots(data.slots);
         form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+      } catch (error) {
+        console.error("Erro ao buscar horários disponíveis:", error);
+        toast.error("Falha ao carregar horários disponíveis.", {
+          description: "Tente novamente.",
+        });
+        setAvailableSlots([]);
+        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+      } finally {
         setFetchingSlots(false);
       }
     };
 
     fetchSlots();
-  }, [selectedBarberId, selectedDate, barbershop.id, service.id, form]);
+  }, [form.watch("barberId"), form.watch("date"), barbershop.id, service.id]);
 
   const handleDaySelected = (date: Date | undefined) => {
     if (date) {
-      form.setValue("date", date, { shouldValidate: true });
+      form.setValue("date", date);
     }
   };
 
@@ -181,7 +178,6 @@ const ServiceItem = ({
         date: finalBookingDate,
       });
 
-      // --- LÓGICA DE SUCESSO COM AUTO-CLOSE ---
       if (result && result.success) {
         toast.success("Reservado com Sucesso!", {
           description: format(
@@ -189,20 +185,18 @@ const ServiceItem = ({
             "'Para' dd 'de' MMMM 'às' HH:mm'.'",
             { locale: ptBR },
           ),
-          duration: 4000,
+          duration: 5000,
         });
 
-        // Aguarda 1.5 segundos e então fecha o painel.
-        // A limpeza completa do formulário será acionada pelo 'handleOpenSheetOpenChange'.
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           setBookingSheetIsOpen(false);
-        }, 1500);
+        }, 1000);
+
+        setAvailableSlots(result.newAvailableSlots || []);
+        form.reset({ ...form.getValues(), time: UNSELECTED_PLACEHOLDER_VALUE });
+
+        return () => clearTimeout(timer);
       } else {
-        // Se a reserva falhar, atualiza a lista de horários para o caso de o slot ter sido pego por outra pessoa
-        if (result.newAvailableSlots) {
-          setAvailableSlots(result.newAvailableSlots);
-          form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
-        }
         toast.error(result?.error || "Erro ao criar reserva");
       }
     } catch (error) {
@@ -230,7 +224,7 @@ const ServiceItem = ({
     <>
       <LoginAlertDialog
         title="Login Necessário"
-        description="Você precisa fazer login para agendar um serviço."
+        description="Você precisa fazer login para agendar um serviço na barbearia."
         actionText="Fazer Login"
       />
 
@@ -279,6 +273,7 @@ const ServiceItem = ({
                         <br />
                         Barbearia:{" "}
                         <span className="font-semibold">{barbershop.name}</span>
+                        <br />
                       </SheetDescription>
                     </SheetHeader>
 
@@ -291,17 +286,13 @@ const ServiceItem = ({
                           before: new Date(new Date().setHours(0, 0, 0, 0)),
                         }}
                         locale={ptBR}
-                        styles={
-                          {
-                            /* Seus estilos do calendário */
-                          }
-                        }
                       />
                     </div>
 
                     <div className="px-5 py-4 space-y-4">
                       {form.watch("date") ? (
                         <>
+                          {/* Barbeiro */}
                           <div>
                             <Label htmlFor="barber">Barbeiro</Label>
                             <Select
@@ -322,15 +313,28 @@ const ServiceItem = ({
                                 >
                                   Selecione um barbeiro
                                 </SelectItem>
-                                {availableBarbers.map((barber) => (
-                                  <SelectItem key={barber.id} value={barber.id}>
-                                    {barber.user.name || barber.user.email}
+                                {availableBarbers.length === 0 ? (
+                                  <SelectItem
+                                    value={NO_BARBERS_FOUND_VALUE}
+                                    disabled
+                                  >
+                                    Nenhum barbeiro disponível
                                   </SelectItem>
-                                ))}
+                                ) : (
+                                  availableBarbers.map((barber) => (
+                                    <SelectItem
+                                      key={barber.id}
+                                      value={barber.id}
+                                    >
+                                      {barber.user.name || barber.user.email}
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
 
+                          {/* Horário */}
                           {form.watch("barberId") !==
                             UNSELECTED_PLACEHOLDER_VALUE && (
                             <div>
@@ -384,25 +388,10 @@ const ServiceItem = ({
                           )}
                         </>
                       ) : (
-                        <div className="py-6">
-                          <p className="text-sm text-center text-muted-foreground">
-                            Por favor, selecione uma data no calendário para ver
-                            os barbeiros e horários.
-                          </p>
-                        </div>
+                        <p className="text-sm text-center text-muted-foreground">
+                          Por favor, selecione uma data no calendário.
+                        </p>
                       )}
-
-                      {form.watch("date") &&
-                        form.watch("time") &&
-                        form.watch("time") !== UNSELECTED_PLACEHOLDER_VALUE &&
-                        form.watch("barberId") !==
-                          UNSELECTED_PLACEHOLDER_VALUE && (
-                          <Card className="mt-4 bg-secondary/20 border-border">
-                            <CardContent className="p-3 space-y-2">
-                              {/* Card de Resumo do Agendamento */}
-                            </CardContent>
-                          </Card>
-                        )}
                     </div>
 
                     <SheetFooter className="px-5">

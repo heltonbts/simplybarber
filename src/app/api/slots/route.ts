@@ -1,44 +1,33 @@
-// src/app/api/slots/route.ts
+// /app/api/slots/route.ts
 
+import { NextRequest } from "next/server";
 import { getAvailableTimeSlots } from "@/actions/create-booking";
-import { NextRequest, NextResponse } from "next/server";
 import { unstable_noStore as noStore } from "next/cache";
 
-// Força o endpoint a ser sempre dinâmico e nunca usar cache
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
-export async function GET(request: NextRequest) {
-  // Garante que a execução desta função não seja cacheada
+export async function GET(req: NextRequest) {
   noStore();
 
-  try {
-    const { searchParams } = new URL(request.url);
+  const searchParams = req.nextUrl.searchParams;
+  const barbershopId = searchParams.get("barbershopId");
+  const serviceId = searchParams.get("serviceId");
+  const barberId = searchParams.get("barberId");
+  const date = searchParams.get("date");
 
-    const barbershopId = searchParams.get("barbershopId");
-    const date = searchParams.get("date");
-    const serviceId = searchParams.get("serviceId");
-    const barberId = searchParams.get("barberId");
-
-    if (!barbershopId || !date || !serviceId || !barberId) {
-      return NextResponse.json(
-        { error: "Parâmetros ausentes na requisição" },
-        { status: 400 },
-      );
-    }
-
-    const slots = await getAvailableTimeSlots(
-      barbershopId,
-      new Date(date),
-      serviceId,
-      barberId,
-    );
-
-    return NextResponse.json(slots);
-  } catch (error) {
-    console.error("[API_SLOTS_ERROR]", error);
-    return NextResponse.json(
-      { error: "Erro interno ao buscar horários" },
-      { status: 500 },
-    );
+  if (!barbershopId || !serviceId || !barberId || !date) {
+    return new Response("Missing params", { status: 400 });
   }
+
+  const dateObj = new Date(date);
+
+  const slots = await getAvailableTimeSlots(
+    barbershopId,
+    dateObj,
+    serviceId,
+    barberId,
+  );
+
+  return Response.json({ slots });
 }
