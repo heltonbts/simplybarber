@@ -127,6 +127,8 @@ export async function updateBooking(payload: UpdateBookingInput) {
   revalidatePath("/dashboard/agendamentos");
 }
 
+import { setMilliseconds, startOfMinute } from "date-fns"; // adicione isso no topo
+
 export async function getAvailableTimeSlots(
   barbershopId: string,
   selectedDate: Date,
@@ -145,9 +147,16 @@ export async function getAvailableTimeSlots(
       where: {
         barberId,
         barbershopId,
-        date: { gte: startOfDay(zonedDate), lt: endOfDay(zonedDate) },
+        date: {
+          gte: startOfDay(zonedDate),
+          lt: endOfDay(zonedDate),
+        },
       },
-      include: { service: { select: { durationInMinutes: true } } },
+      include: {
+        service: {
+          select: { durationInMinutes: true },
+        },
+      },
     }),
     db.barbershopService.findUnique({
       where: { id: serviceId },
@@ -158,27 +167,24 @@ export async function getAvailableTimeSlots(
   if (!service) return [];
 
   const bookingsFromDb = dbBookings.map((b) => ({
-    date: b.date,
+    date: startOfMinute(setMilliseconds(new Date(b.date), 0)),
     duration: b.service.durationInMinutes,
   }));
 
   const bookingsFromKv = (cachedData as string[]).map((item) => {
     const parsed = JSON.parse(item) as { date: string; duration: number };
     return {
-      date: new Date(parsed.date),
+      date: startOfMinute(setMilliseconds(new Date(parsed.date), 0)),
       duration: parsed.duration,
     };
   });
 
   const combinedBookingsMap = new Map<
-    string,
+    number,
     { date: Date; duration: number }
   >();
-  bookingsFromKv.forEach((b) =>
-    combinedBookingsMap.set(b.date.toISOString(), b),
-  );
-  bookingsFromDb.forEach((b) =>
-    combinedBookingsMap.set(b.date.toISOString(), b),
+  [...bookingsFromKv, ...bookingsFromDb].forEach((b) =>
+    combinedBookingsMap.set(b.date.getTime(), b),
   );
 
   const combinedBookings = Array.from(combinedBookingsMap.values());
@@ -187,6 +193,7 @@ export async function getAvailableTimeSlots(
   const barbershopWorkingHour = await db.barbershopWorkingHour.findUnique({
     where: { barbershopId_weekDay: { barbershopId, weekDay } },
   });
+
   if (!barbershopWorkingHour?.isOpen) return [];
 
   const [openHour, openMinute] = barbershopWorkingHour.openTime
@@ -195,19 +202,22 @@ export async function getAvailableTimeSlots(
   const [closeHour, closeMinute] = barbershopWorkingHour.closeTime
     .split(":")
     .map(Number);
+
   const startOfWorkDay = setMinutes(setHours(zonedDate, openHour), openMinute);
   const endOfWorkDay = setMinutes(setHours(zonedDate, closeHour), closeMinute);
   const nowInZone = toZonedTime(new Date(), timeZone);
 
   const potentialSlots: Date[] = [];
   let currentTime = startOfWorkDay;
+
   while (isBefore(currentTime, endOfWorkDay)) {
-    potentialSlots.push(currentTime);
+    potentialSlots.push(startOfMinute(setMilliseconds(currentTime, 0)));
     currentTime = addMinutes(currentTime, 15);
   }
 
   const availableSlots = potentialSlots.filter((slotStart) => {
     const slotEnd = addMinutes(slotStart, service.durationInMinutes);
+
     if (isAfter(slotEnd, endOfWorkDay) || isBefore(slotStart, nowInZone))
       return false;
 
@@ -220,6 +230,7 @@ export async function getAvailableTimeSlots(
           Number(barbershopWorkingHour.lunchStart.split(":")[1]),
         )
       : null;
+
     const lunchEnd = barbershopWorkingHour.lunchEnd
       ? setMinutes(
           setHours(
@@ -229,22 +240,23 @@ export async function getAvailableTimeSlots(
           Number(barbershopWorkingHour.lunchEnd.split(":")[1]),
         )
       : null;
+
     if (
       lunchStart &&
       lunchEnd &&
       isBefore(slotStart, lunchEnd) &&
       isAfter(slotEnd, lunchStart)
-    )
+    ) {
       return false;
+    }
 
     const hasConflict = combinedBookings.some((booking) => {
-      const bookingStart = toZonedTime(booking.date, timeZone);
+      const bookingStart = booking.date;
       const bookingEnd = addMinutes(bookingStart, booking.duration);
       return isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
     });
 
-    if (hasConflict) return false;
-    return true;
+    return !hasConflict;
   });
 
   return availableSlots.map((date) =>
