@@ -23,6 +23,8 @@ import {
   User,
 } from "../../generated/prisma";
 
+import { unstable_noStore as noStore } from "next/cache";
+
 export interface CreateBookingInput {
   serviceId: string;
   date: Date;
@@ -165,6 +167,7 @@ export async function getAvailableTimeSlots(
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
+  noStore();
   console.log(
     `[GET_SLOTS_DEBUG] Iniciando para data: ${selectedDate.toISOString()}`,
   );
