@@ -16,12 +16,7 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
-import {
-  Prisma,
-  Booking,
-  BarbershopService,
-  User,
-} from "../../generated/prisma";
+import { Booking, BarbershopService, User } from "../../generated/prisma";
 import { unstable_noStore as noStore } from "next/cache";
 
 export interface CreateBookingInput {
@@ -269,68 +264,102 @@ export const createBooking = async ({
 }: CreateBookingInput): Promise<CreateBookingResult> => {
   noStore();
 
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Acesso não autorizado." };
+  }
+
+  const bookingDate = new Date(date);
+  if (isNaN(bookingDate.getTime())) {
+    return { success: false, error: "Data inválida." };
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return { success: false, error: "Acesso não autorizado." };
-    }
+    // A transação garante que todas as operações sejam atômicas e consistentes
+    const booking = await db.$transaction(async (tx) => {
+      // 1. Buscamos a duração do serviço DENTRO da transação
+      const service = await tx.barbershopService.findUnique({
+        where: { id: serviceId },
+        select: { durationInMinutes: true },
+      });
 
-    const bookingDate = new Date(date);
-    if (isNaN(bookingDate.getTime())) {
-      return { success: false, error: "Data inválida." };
-    }
+      if (!service) {
+        throw new Error("Serviço não encontrado.");
+      }
 
-    const availableSlotsBeforeBooking = await getAvailableTimeSlots(
-      barbershopId,
-      bookingDate,
-      serviceId,
-      barberId,
-    );
+      // 2. Fazemos uma "verificação dupla" (double-check) DENTRO da transação
+      // Esta leitura é garantida de ser a mais atualizada possível
+      const newBookingStart = toZonedTime(bookingDate, timeZone);
+      const newBookingEnd = addMinutes(
+        newBookingStart,
+        service.durationInMinutes,
+      );
 
-    const requestedTime = formatInTimeZone(bookingDate, timeZone, "HH:mm");
+      const conflictingBookings = await tx.booking.findMany({
+        where: {
+          barberId,
+          date: {
+            // Busca por qualquer agendamento que termine depois do nosso início
+            // E comece antes do nosso fim
+            gte: addMinutes(newBookingStart, -service.durationInMinutes + 1),
+            lt: addMinutes(newBookingEnd, service.durationInMinutes - 1),
+          },
+        },
+        include: { service: { select: { durationInMinutes: true } } },
+      });
 
-    if (!availableSlotsBeforeBooking.includes(requestedTime)) {
-      return {
-        success: false,
-        error: "Horário não disponível. Por favor, atualize e escolha outro.",
-      };
-    }
+      const hasConflict = conflictingBookings.some((existingBooking) => {
+        const existingStart = toZonedTime(existingBooking.date, timeZone);
+        const existingEnd = addMinutes(
+          existingStart,
+          existingBooking.service.durationInMinutes,
+        );
+        return (
+          isBefore(newBookingStart, existingEnd) &&
+          isAfter(newBookingEnd, existingStart)
+        );
+      });
 
-    const booking = await db.booking.create({
-      data: {
-        userId: session.user.id,
-        serviceId,
-        date: bookingDate,
-        barbershopId,
-        barberId,
-        clientName,
-        clientPhone,
-        notes,
-      },
+      if (hasConflict) {
+        // Lança um erro específico que será capturado pelo bloco catch
+        throw new Error("CONFLICT");
+      }
+
+      // 3. Se não houver conflito, criamos o agendamento
+      return await tx.booking.create({
+        data: {
+          userId: session.user.id,
+          serviceId,
+          date: bookingDate,
+          barbershopId,
+          barberId,
+          clientName,
+          clientPhone,
+          notes,
+        },
+      });
     });
 
-    const newAvailableSlots = availableSlotsBeforeBooking.filter(
-      (slot) => slot !== requestedTime,
-    );
-
+    // Se a transação for bem-sucedida, revalidamos os paths
     revalidatePath(`/barbershops/${barbershopId}`);
     revalidatePath("/dashboard/agendamentos");
     if (session.user.id) {
       revalidatePath("/meus-agendamentos");
     }
 
-    return { success: true, booking, newAvailableSlots };
+    return { success: true, booking };
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    // Captura o erro específico de conflito da nossa transação
+    if (error instanceof Error && error.message === "CONFLICT") {
       return {
         success: false,
         error:
           "Este horário foi agendado por outra pessoa. Por favor, atualize e escolha um novo horário.",
       };
     }
+
+    // Captura outros erros do Prisma ou erros genéricos
+    console.error("[CREATE_BOOKING_ERROR]", error);
     return { success: false, error: "Ocorreu um erro ao criar o agendamento." };
   }
 };
