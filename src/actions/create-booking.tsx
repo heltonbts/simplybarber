@@ -12,7 +12,6 @@ import {
   isBefore,
   isAfter,
   startOfDay,
-  differenceInMinutes,
   endOfDay,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -136,30 +135,59 @@ export async function getAvailableTimeSlots(
   noStore();
 
   return await db.$transaction(async (tx) => {
-    // A primeira parte da função continua a mesma...
     const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
     });
     if (!service) return [];
+
     const zonedDate = toZonedTime(selectedDate, timeZone);
     const weekDay = getDay(zonedDate);
+
     const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
       where: { barbershopId_weekDay: { barbershopId, weekDay } },
     });
     if (!barbershopWorkingHour?.isOpen) return [];
+
+    // --- LOGS DE DEPURAÇÃO ADICIONADOS AQUI ---
     const start = startOfDay(zonedDate);
     const end = endOfDay(zonedDate);
+
+    console.log(
+      `[PROVE_IT_DEBUG] Buscando agendamentos no banco entre: ${start.toISOString()} e ${end.toISOString()}`,
+    );
+
     const existingBookings = await tx.booking.findMany({
-      where: { barberId, barbershopId, date: { gte: start, lt: end } },
+      where: {
+        barberId,
+        barbershopId,
+        date: { gte: start, lt: end },
+      },
       include: { service: { select: { durationInMinutes: true } } },
     });
+
+    console.log(
+      `[PROVE_IT_DEBUG] O BANCO DE DADOS RETORNOU: ${existingBookings.length} agendamentos.`,
+    );
+
+    if (existingBookings.length > 0) {
+      console.log(
+        "[PROVE_IT_DEBUG] Detalhes dos agendamentos encontrados:",
+        existingBookings.map((b) => ({
+          date: b.date.toISOString(),
+          duration: b.service.durationInMinutes,
+        })),
+      );
+    }
+    // --- FIM DOS LOGS ---
+
     const [openHour, openMinute] = barbershopWorkingHour.openTime
       .split(":")
       .map(Number);
     const [closeHour, closeMinute] = barbershopWorkingHour.closeTime
       .split(":")
       .map(Number);
+
     const startOfWorkDay = setMinutes(
       setHours(zonedDate, openHour),
       openMinute,
@@ -169,6 +197,7 @@ export async function getAvailableTimeSlots(
       closeMinute,
     );
     const nowInZone = toZonedTime(new Date(), timeZone);
+
     const potentialSlots: Date[] = [];
     let currentTime = startOfWorkDay;
     while (isBefore(currentTime, endOfWorkDay)) {
@@ -176,12 +205,12 @@ export async function getAvailableTimeSlots(
       currentTime = addMinutes(currentTime, 15);
     }
 
-    // O filtro agora terá um log detalhado
     const availableSlots = potentialSlots.filter((slotStart) => {
       const slotEnd = addMinutes(slotStart, service.durationInMinutes);
 
       if (isAfter(slotEnd, endOfWorkDay)) return false;
       if (isBefore(slotStart, nowInZone)) return false;
+
       const lunchStart = barbershopWorkingHour.lunchStart
         ? setMinutes(
             setHours(
@@ -210,46 +239,13 @@ export async function getAvailableTimeSlots(
 
       const hasConflict = existingBookings.some((booking) => {
         const bookingStart = toZonedTime(booking.date, timeZone);
-        const bookingDuration = booking.service.durationInMinutes;
-        const bookingEnd = addMinutes(bookingStart, bookingDuration);
-
-        const conflict =
-          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
-
-        // --- LOG DE DEPURAÇÃO ADICIONADO ---
-        // Loga apenas os cálculos para slots que estão a menos de 90 min de um agendamento existente
-        if (Math.abs(differenceInMinutes(slotStart, bookingStart)) < 90) {
-          console.log({
-            "--- Checando Conflito ---": "---",
-            "Slot em verificação": formatInTimeZone(
-              slotStart,
-              timeZone,
-              "HH:mm",
-            ),
-            "Fim do novo serviço seria": formatInTimeZone(
-              slotEnd,
-              timeZone,
-              "HH:mm",
-            ),
-            "------------------": "---",
-            "Agendamento existente começa": formatInTimeZone(
-              bookingStart,
-              timeZone,
-              "HH:mm",
-            ),
-            "Duração do agendamento existente (min)": bookingDuration,
-            "Fim calculado do agendamento existente": formatInTimeZone(
-              bookingEnd,
-              timeZone,
-              "HH:mm",
-            ),
-            "------------------ (2)": "---",
-            "Resultado do Conflito": conflict,
-          });
-        }
-        // --- FIM DO LOG ---
-
-        return conflict;
+        const bookingEnd = addMinutes(
+          bookingStart,
+          booking.service.durationInMinutes,
+        );
+        return (
+          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart)
+        );
       });
 
       if (hasConflict) return false;
