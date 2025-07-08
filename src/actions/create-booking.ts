@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server";
 
 import { db } from "@/lib/prisma";
@@ -26,6 +27,7 @@ import { Booking, BarbershopService, User } from "../../generated/prisma";
 import { createBrazilDateTime, toBrazilTime } from "@/lib/timezone-utils";
 
 export interface CreateBookingInput {
+  userId: string | null;
   serviceId: string;
   date: Date;
   barbershopId: string;
@@ -81,6 +83,7 @@ export async function getBookingsByBarbershop(
     return {
       ...booking,
       formattedDate: formattedDate,
+      data: toBrazilTime(booking.date),
     };
   });
 
@@ -227,9 +230,12 @@ export async function createBookingAction(
   barbershopId: string,
   barberId: string,
   serviceId: string,
-  userId: string,
-  selectedDate: string, // formato: "2025-07-08"
-  selectedTime: string, // formato: "14:00"
+  userId: string | null,
+  selectedDate: string,
+  selectedTime: string,
+  clientName?: string,
+  clientPhone?: string,
+  notes?: string,
 ) {
   nextCacheNoStore();
 
@@ -259,15 +265,22 @@ export async function createBookingAction(
     // 3. CRIAÇÃO: Se o horário passou na verificação, cria o agendamento.
     const bookingDateUTC = createBrazilDateTime(selectedDate, selectedTime);
 
-    const booking = await db.booking.create({
-      data: {
-        barbershopId,
-        barberId,
-        serviceId,
-        userId,
-        date: bookingDateUTC, // Salva a data em UTC
-      },
-    });
+    const data: any = {
+      barbershopId,
+      barberId,
+      serviceId,
+      date: bookingDateUTC,
+      clientName,
+      clientPhone,
+      notes,
+    };
+
+    // Adiciona userId somente se for válido
+    if (userId) {
+      data.userId = userId;
+    }
+
+    const booking = await db.booking.create({ data });
 
     // Revalida os paths para atualizar a UI em outros lugares
     revalidatePath(`/barbershops/${barbershopId}`);

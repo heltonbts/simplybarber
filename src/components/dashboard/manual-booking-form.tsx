@@ -93,6 +93,7 @@ export function ManualBookingForm({
       combinedDate.setHours(hours, minutes, 0, 0);
 
       const payload: CreateBookingInput = {
+        userId: null,
         barbershopId,
         serviceId: data.serviceId,
         barberId: data.barberId,
@@ -107,7 +108,7 @@ export function ManualBookingForm({
         toast.success("Agendamento atualizado com sucesso!");
       } else {
         // TODO: Replace 'userId' with the actual user ID if available
-        const userId = ""; // Provide the correct userId here
+        const userId = ""; // Provide the correct userId here or fetch from context/auth
         const selectedDate = format(combinedDate, "yyyy-MM-dd");
         const selectedTime = format(combinedDate, "HH:mm");
         const result = await createBookingAction(
@@ -117,6 +118,9 @@ export function ManualBookingForm({
           userId,
           selectedDate,
           selectedTime,
+          data.clientName,
+          data.clientPhone,
+          data.notes,
         );
         if (!result.success) throw new Error(result.error);
         toast.success("Agendamento criado com sucesso!");

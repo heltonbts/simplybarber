@@ -2,7 +2,6 @@
 "use client";
 
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   CalendarIcon,
   ClockIcon,
@@ -15,14 +14,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -31,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { BookingDetails } from "@/actions/create-booking";
+import { toBrazilTime } from "@/lib/timezone-utils";
 
 interface BookingsDataTableProps {
   data: BookingDetails[];
@@ -62,12 +54,12 @@ export function BookingsDataTable({
                 <Badge
                   className="text-[10px] px-2 py-0.5"
                   variant={
-                    new Date(booking.date) > new Date()
+                    toBrazilTime(new Date(booking.date)) > new Date()
                       ? "default"
                       : "secondary"
                   }
                 >
-                  {new Date(booking.date) > new Date()
+                  {toBrazilTime(new Date(booking.date)) > new Date()
                     ? "Confirmado"
                     : "Finalizado"}
                 </Badge>
@@ -102,12 +94,16 @@ export function BookingsDataTable({
 
               <div className="flex items-center gap-1">
                 <CalendarIcon className="h-3 w-3" />
-                <span>{format(new Date(booking.date), "dd/MM/yy")}</span>
+                <span>
+                  {format(toBrazilTime(new Date(booking.date)), "dd/MM/yy")}
+                </span>
               </div>
 
               <div className="flex items-center gap-1">
                 <ClockIcon className="h-3 w-3" />
-                <span>{format(new Date(booking.date), "HH:mm")}</span>
+                <span>
+                  {format(toBrazilTime(new Date(booking.date)), "HH:mm")}
+                </span>
               </div>
 
               <div className="flex items-center gap-1">
@@ -123,97 +119,6 @@ export function BookingsDataTable({
           </Card>
         ))}
       </div>
-           {" "}
-      {/* Layout Desktop: Tabela (JSX sem espaços para evitar erro de hidratação) */}
-           {" "}
-      <div className="hidden sm:block border rounded-md">
-               {" "}
-        <Table>
-                   {" "}
-          <TableHeader>
-                       {" "}
-            <TableRow>
-                            <TableHead>Status</TableHead>             {" "}
-              <TableHead>Cliente</TableHead>             {" "}
-              <TableHead>Data e Hora</TableHead>             {" "}
-              <TableHead>Serviço</TableHead>             {" "}
-              <TableHead>Barbeiro</TableHead>             {" "}
-              <TableHead className="text-right">Ações</TableHead>         
-               {" "}
-            </TableRow>
-                     {" "}
-          </TableHeader>
-                   {" "}
-          <TableBody>
-                       {" "}
-            {data.map((booking: any) => (
-              <TableRow key={booking.id}>
-                               {" "}
-                <TableCell>
-                  <Badge
-                    variant={
-                      new Date(booking.date) > new Date()
-                        ? "default"
-                        : "secondary"
-                    }
-                  >
-                    {new Date(booking.date) > new Date()
-                      ? "Confirmado"
-                      : "Finalizado"}
-                  </Badge>
-                </TableCell>
-                               {" "}
-                <TableCell>
-                  {booking.clientName ||
-                    booking.user?.name ||
-                    "Cliente não informado"}
-                </TableCell>
-                               {" "}
-                <TableCell>
-                  {format(new Date(booking.date), "dd/MM/yy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
-                </TableCell>
-                                <TableCell>{booking.service.name}</TableCell>   
-                            <TableCell>{booking.barber.user.name}</TableCell>   
-                           {" "}
-                <TableCell className="text-right">
-                                   {" "}
-                  <DropdownMenu>
-                                       {" "}
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                                       {" "}
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onEdit(booking)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        <span>Editar</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-600"
-                        onClick={() => onDelete(booking.id)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span>Excluir</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                                     {" "}
-                  </DropdownMenu>
-                                 {" "}
-                </TableCell>
-                             {" "}
-              </TableRow>
-            ))}
-                     {" "}
-          </TableBody>
-                 {" "}
-        </Table>
-             {" "}
-      </div>
-         {" "}
     </>
   );
 }
