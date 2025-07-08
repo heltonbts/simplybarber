@@ -7,8 +7,6 @@ import { revalidatePath } from "next/cache";
 import { kv } from "@vercel/kv"; // 1. Importa o Vercel KV
 import {
   getDay,
-  setHours,
-  setMinutes,
   addMinutes,
   isBefore,
   isAfter,
@@ -16,7 +14,7 @@ import {
   endOfDay,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone, toDate, toZonedTime } from "date-fns-tz";
 import {
   Booking,
   BarbershopService,
@@ -134,123 +132,94 @@ export async function getAvailableTimeSlots(
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
-  const zonedDate = toZonedTime(selectedDate, timeZone);
-  const dayKey = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd");
-  const kvKey = `booking:${barbershopId}:${barberId}:${dayKey}`;
+  noStore();
 
-  const [cachedData, dbBookings, service] = await Promise.all([
-    kv.smembers(kvKey),
-    db.booking.findMany({
-      where: {
-        barberId,
-        barbershopId,
-        date: {
-          gte: startOfDay(zonedDate),
-          lt: endOfDay(zonedDate),
-        },
-      },
-      include: {
-        service: { select: { durationInMinutes: true } },
-      },
-    }),
-    db.barbershopService.findUnique({
+  return await db.$transaction(async (tx) => {
+    // ... (parte inicial para buscar service, weekDay, etc. continua a mesma)
+    const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
-    }),
-  ]);
+    });
+    if (!service) return [];
+    const zonedDate = toZonedTime(selectedDate, timeZone);
+    const weekDay = getDay(zonedDate);
+    const barbershopWorkingHour = await tx.barbershopWorkingHour.findUnique({
+      where: { barbershopId_weekDay: { barbershopId, weekDay } },
+    });
+    if (!barbershopWorkingHour?.isOpen) return [];
 
-  if (!service) return [];
-
-  const bookingsFromDb = dbBookings.map((b) => ({
-    date: b.date,
-    duration: b.service.durationInMinutes,
-  }));
-
-  const bookingsFromKv = (cachedData as string[]).flatMap((item) => {
-    try {
-      const parsed = JSON.parse(item);
-      return [
-        {
-          date: new Date(parsed.date),
-          duration: parsed.duration,
-        },
-      ];
-    } catch {
-      return [];
-    }
-  });
-
-  const combinedBookings = [...bookingsFromDb, ...bookingsFromKv];
-
-  const weekDay = getDay(zonedDate);
-  const workingHour = await db.barbershopWorkingHour.findUnique({
-    where: {
-      barbershopId_weekDay: {
-        barbershopId,
-        weekDay,
-      },
-    },
-  });
-
-  if (!workingHour || !workingHour.isOpen) return [];
-
-  const [openHour, openMinute] = workingHour.openTime.split(":").map(Number);
-  const [closeHour, closeMinute] = workingHour.closeTime.split(":").map(Number);
-  const startOfWorkDay = setMinutes(setHours(zonedDate, openHour), openMinute);
-  const endOfWorkDay = setMinutes(setHours(zonedDate, closeHour), closeMinute);
-
-  const lunchStart = workingHour.lunchStart
-    ? setMinutes(
-        setHours(zonedDate, Number(workingHour.lunchStart.split(":")[0])),
-        Number(workingHour.lunchStart.split(":")[1]),
-      )
-    : null;
-
-  const lunchEnd = workingHour.lunchEnd
-    ? setMinutes(
-        setHours(zonedDate, Number(workingHour.lunchEnd.split(":")[0])),
-        Number(workingHour.lunchEnd.split(":")[1]),
-      )
-    : null;
-
-  const nowInZone = toZonedTime(new Date(), timeZone);
-
-  const potentialSlots: Date[] = [];
-  let currentTime = startOfWorkDay;
-
-  while (isBefore(currentTime, endOfWorkDay)) {
-    potentialSlots.push(currentTime);
-    currentTime = addMinutes(currentTime, 15);
-  }
-
-  const availableSlots = potentialSlots.filter((slotStart) => {
-    const slotEnd = addMinutes(slotStart, service.durationInMinutes);
-
-    if (isAfter(slotEnd, endOfWorkDay) || isBefore(slotStart, nowInZone))
-      return false;
-
-    if (
-      lunchStart &&
-      lunchEnd &&
-      isBefore(slotEnd, lunchStart) === false &&
-      isAfter(slotStart, lunchEnd) === false
-    ) {
-      return false;
-    }
-
-    const conflict = combinedBookings.some((booking) => {
-      const bookingStart = toZonedTime(booking.date, timeZone);
-      const bookingEnd = addMinutes(bookingStart, booking.duration);
-
-      return isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart);
+    const start = startOfDay(zonedDate);
+    const end = endOfDay(zonedDate);
+    const existingBookings = await tx.booking.findMany({
+      where: { barberId, barbershopId, date: { gte: start, lt: end } },
+      include: { service: { select: { durationInMinutes: true } } },
     });
 
-    return !conflict;
-  });
+    // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
 
-  return availableSlots.map((slot) =>
-    formatInTimeZone(slot, timeZone, "HH:mm"),
-  );
+    const dayString = formatInTimeZone(zonedDate, timeZone, "yyyy-MM-dd"); // Ex: "2025-07-08"
+
+    const startOfWorkDay = toDate(
+      `${dayString}T${barbershopWorkingHour.openTime}:00`,
+      { timeZone },
+    );
+    const endOfWorkDay = toDate(
+      `${dayString}T${barbershopWorkingHour.closeTime}:00`,
+      { timeZone },
+    );
+
+    const lunchStart = barbershopWorkingHour.lunchStart
+      ? toDate(`${dayString}T${barbershopWorkingHour.lunchStart}:00`, {
+          timeZone,
+        })
+      : null;
+
+    const lunchEnd = barbershopWorkingHour.lunchEnd
+      ? toDate(`${dayString}T${barbershopWorkingHour.lunchEnd}:00`, {
+          timeZone,
+        })
+      : null;
+
+    // --- FIM DA CORREÇÃO ---
+
+    const nowInZone = toZonedTime(new Date(), timeZone);
+    const potentialSlots: Date[] = [];
+    let currentTime = startOfWorkDay;
+    while (isBefore(currentTime, endOfWorkDay)) {
+      potentialSlots.push(currentTime);
+      currentTime = addMinutes(currentTime, 15);
+    }
+
+    const availableSlots = potentialSlots.filter((slotStart) => {
+      const slotEnd = addMinutes(slotStart, service.durationInMinutes);
+      if (isAfter(slotEnd, endOfWorkDay) || isBefore(slotStart, nowInZone))
+        return false;
+      if (
+        lunchStart &&
+        lunchEnd &&
+        isBefore(slotStart, lunchEnd) &&
+        isAfter(slotEnd, lunchStart)
+      )
+        return false;
+      const hasConflict = existingBookings.some((booking) => {
+        const bookingStart = toZonedTime(booking.date, timeZone);
+        const bookingEnd = addMinutes(
+          bookingStart,
+          booking.service.durationInMinutes,
+        );
+        return (
+          isBefore(slotStart, bookingEnd) && isAfter(slotEnd, bookingStart)
+        );
+      });
+
+      if (hasConflict) return false;
+      return true;
+    });
+
+    return availableSlots.map((date) =>
+      formatInTimeZone(date, timeZone, "HH:mm"),
+    );
+  });
 }
 
 export const createBooking = async ({
@@ -394,4 +363,7 @@ export async function deleteBooking(bookingId: string) {
     console.error("❌ Erro ao excluir agendamento:", error);
     throw new Error("Falha ao excluir o agendamento. Tente novamente.");
   }
+}
+function noStore() {
+  throw new Error("Function not implemented.");
 }
