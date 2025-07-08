@@ -1,7 +1,18 @@
 "use client";
 
 import Image from "next/image";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
 import { Barbershop, BarbershopService } from "../../generated/prisma";
+import { toUTC } from "@/lib/timezone-utils";
+
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import {
@@ -12,14 +23,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "./ui/sheet";
-
-import { ptBR } from "date-fns/locale";
 import { Calendar } from "@/components/ui/calendar";
-import { useState, useEffect } from "react";
-import { format, setHours, setMinutes } from "date-fns";
-import { toast } from "sonner";
-import { useSession } from "next-auth/react";
-
 import {
   Select,
   SelectContent,
@@ -28,22 +32,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-
-import { createBooking } from "@/actions/create-booking";
-import type {
-  BarberForBookings,
-  BarbershopWorkingHourForBookings,
-} from "@/app/dashboard/agendamentos/BookingsClientPage";
 import { Label } from "@radix-ui/react-label";
 import { useLoginAlert } from "./useLoginAlert";
 
 const UNSELECTED_PLACEHOLDER_VALUE = "UNSELECTED";
-const LOADING_SLOTS_VALUE = "LOADING_SLOTS";
 const NO_SLOTS_AVAILABLE_VALUE = "NO_SLOTS_AVAILABLE";
-const NO_BARBERS_FOUND_VALUE = "NO_BARBERS_FOUND";
 
 const createBookingFormSchema = z.object({
   barberId: z
@@ -59,7 +52,7 @@ const createBookingFormSchema = z.object({
     })
     .min(
       new Date(new Date().setHours(0, 0, 0, 0)),
-      "Não é possível agendar para uma data no passado.",
+      "Data no passado inválida.",
     ),
   time: z
     .string()
@@ -67,7 +60,6 @@ const createBookingFormSchema = z.object({
     .refine(
       (val) =>
         val !== UNSELECTED_PLACEHOLDER_VALUE &&
-        val !== LOADING_SLOTS_VALUE &&
         val !== NO_SLOTS_AVAILABLE_VALUE,
       {
         message: "Selecione um horário válido.",
@@ -77,11 +69,18 @@ const createBookingFormSchema = z.object({
 
 type CreateBookingFormInput = z.infer<typeof createBookingFormSchema>;
 
+interface Barber {
+  id: string;
+  user: {
+    name: string | null;
+    email: string | null;
+  };
+}
+
 interface ServiceItemProps {
   service: BarbershopService;
   barbershop: Barbershop;
-  availableBarbers: BarberForBookings[];
-  barbershopWorkingHours: BarbershopWorkingHourForBookings[];
+  availableBarbers: Barber[];
 }
 
 const ServiceItem = ({
@@ -106,102 +105,180 @@ const ServiceItem = ({
     mode: "onBlur",
   });
 
-  useEffect(() => {
-    const fetchSlots = async () => {
-      const barberId = form.watch("barberId");
-      const date = form.watch("date");
+  const fetchAvailableSlots = async (showLoading = true) => {
+    const barberId = form.watch("barberId");
+    const date = form.watch("date");
 
-      if (!barberId || barberId === UNSELECTED_PLACEHOLDER_VALUE || !date) {
-        setAvailableSlots([]);
-        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
-        return;
+    if (!barberId || barberId === UNSELECTED_PLACEHOLDER_VALUE || !date) {
+      setAvailableSlots([]);
+      form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+      return;
+    }
+
+    if (showLoading) {
+      setFetchingSlots(true);
+    }
+
+    try {
+      const dateString = format(toUTC(date), "yyyy-MM-dd");
+
+      console.log("🔍 Buscando slots para:", {
+        barbershopId: barbershop.id,
+        serviceId: service.id,
+        barberId,
+        date: dateString,
+        serviceName: service.name,
+        serviceDuration: service.durationInMinutes + " minutos",
+      });
+
+      const res = await fetch(
+        `/api/slots?barbershopId=${barbershop.id}&serviceId=${service.id}&barberId=${barberId}&date=${dateString}&_t=${Date.now()}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error(`Erro ${res.status}: ${res.statusText}`);
       }
 
-      setFetchingSlots(true);
+      const data = await res.json();
+      console.log("✅ Resposta da API recebida:", data);
 
-      try {
-        const dateOnly = new Date(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
-        );
+      console.log("✅ Slots recebidos:", data.slots);
+      console.log("📊 Total de slots disponíveis:", data.slots.length);
 
-        const res = await fetch(
-          `/api/slots?barbershopId=${barbershop.id}&serviceId=${service.id}&barberId=${barberId}&date=${dateOnly.toISOString()}`,
-          {
-            method: "GET",
-            cache: "no-store",
-          },
-        );
+      setAvailableSlots(data.slots || []);
 
-        if (!res.ok) throw new Error("Erro ao buscar horários disponíveis");
-        const data = await res.json();
-        setAvailableSlots(data.slots);
-        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
-      } catch (error) {
-        console.error("Erro ao buscar horários disponíveis:", error);
-        toast.error("Falha ao carregar horários disponíveis.", {
-          description: "Tente novamente.",
-        });
-        setAvailableSlots([]);
-        form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
-      } finally {
+      // Reset time selection if current time is no longer available
+      const currentTime = form.watch("time");
+      if (currentTime && currentTime !== UNSELECTED_PLACEHOLDER_VALUE) {
+        if (!data.slots.includes(currentTime)) {
+          console.log(
+            "⚠️ Horário selecionado não está mais disponível, resetando...",
+          );
+          form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+        }
+      }
+    } catch (err) {
+      console.error("❌ Erro ao buscar horários:", err);
+      toast.error("Erro ao buscar horários disponíveis");
+      setAvailableSlots([]);
+      form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
+    } finally {
+      if (showLoading) {
         setFetchingSlots(false);
       }
-    };
+    }
+  };
 
-    fetchSlots();
-  }, [form.watch("barberId"), form.watch("date"), barbershop.id, service.id]);
+  // Fetch slots when barber or date changes
+  useEffect(() => {
+    fetchAvailableSlots();
+  }, [form.watch("barberId"), form.watch("date")]);
 
   const handleDaySelected = (date: Date | undefined) => {
     if (date) {
       form.setValue("date", date);
+      form.setValue("time", UNSELECTED_PLACEHOLDER_VALUE);
     }
   };
 
-  const handleCreateBooking = async (data: CreateBookingFormInput) => {
+  const createBooking = async (selectedTime: string) => {
+    const date = form.watch("date");
+    const barberId = form.watch("barberId");
+
+    if (!date || !barberId) {
+      throw new Error("Data e barbeiro são obrigatórios");
+    }
+
+    const utcDate = toUTC(date);
+    const dateString = format(utcDate, "yyyy-MM-dd");
+
+    console.log("📅 Criando agendamento:", {
+      barbershopId: barbershop.id,
+      barberId,
+      serviceId: service.id,
+      selectedDate: dateString,
+      selectedTime,
+      serviceName: service.name,
+      serviceDuration: service.durationInMinutes + " minutos",
+    });
+
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify({
+        barbershopId: barbershop.id,
+        barberId,
+        serviceId: service.id,
+        userId: sessionData?.user?.id,
+        selectedDate: dateString,
+        selectedTime,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData?.error || `Erro ${response.status}: ${response.statusText}`,
+      );
+    }
+
+    const result = await response.json();
+    console.log("✅ Agendamento criado com sucesso:", result);
+
+    return result;
+  };
+
+  const handleSubmit = async (data: CreateBookingFormInput) => {
     if (status !== "authenticated" || !sessionData?.user?.id) {
       showLoginAlert();
       return;
     }
 
     setIsConfirmingBooking(true);
-    try {
-      const hours = Number(data.time.split(":")[0]);
-      const minutes = Number(data.time.split(":")[1]);
-      const finalBookingDate = setMinutes(setHours(data.date, hours), minutes);
 
-      const result = await createBooking({
-        serviceId: service.id,
-        barbershopId: barbershop.id,
-        barberId: data.barberId,
-        date: finalBookingDate,
+    try {
+      await createBooking(data.time);
+
+      console.log(
+        "🎉 Agendamento confirmado! Atualizando lista de horários...",
+      );
+
+      // Atualizar imediatamente os slots disponíveis
+      await fetchAvailableSlots(false);
+
+      toast.success("Agendamento confirmado com sucesso!");
+
+      // Reset form
+      form.reset({
+        barberId: UNSELECTED_PLACEHOLDER_VALUE,
+        date: undefined,
+        time: UNSELECTED_PLACEHOLDER_VALUE,
       });
 
-      if (result && result.success) {
-        toast.success("Reservado com Sucesso!", {
-          description: format(
-            finalBookingDate,
-            "'Para' dd 'de' MMMM 'às' HH:mm'.'",
-            { locale: ptBR },
-          ),
-          duration: 5000,
-        });
-
-        const timer = setTimeout(() => {
-          setBookingSheetIsOpen(false);
-        }, 1000);
-
-        setAvailableSlots(result.newAvailableSlots || []);
-        form.reset({ ...form.getValues(), time: UNSELECTED_PLACEHOLDER_VALUE });
-
-        return () => clearTimeout(timer);
-      } else {
-        toast.error(result?.error || "Erro ao criar reserva");
-      }
+      setBookingSheetIsOpen(false);
     } catch (error) {
-      console.error("Erro ao criar reserva:", error);
-      toast.error("Erro ao criar reserva");
+      console.error("❌ Erro ao confirmar agendamento:", error);
+
+      // Atualizar slots mesmo em caso de erro para garantir sincronização
+      await fetchAvailableSlots(false);
+
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Erro desconhecido ao criar agendamento";
+      toast.error(errorMessage);
     } finally {
       setIsConfirmingBooking(false);
     }
@@ -216,18 +293,22 @@ const ServiceItem = ({
         time: UNSELECTED_PLACEHOLDER_VALUE,
       });
       form.clearErrors();
-      setAvailableSlots([]);
     }
+  };
+
+  // Função para refrescar manualmente os slots (útil para debugging)
+  const handleRefreshSlots = async () => {
+    console.log("🔄 Atualizando horários manualmente...");
+    await fetchAvailableSlots();
   };
 
   return (
     <>
       <LoginAlertDialog
         title="Login Necessário"
-        description="Você precisa fazer login para agendar um serviço na barbearia."
+        description="Você precisa fazer login para agendar um serviço."
         actionText="Fazer Login"
       />
-
       <Card>
         <CardContent className="p-0">
           <div className="flex items-center gap-3 p-2 pt-0 pb-0">
@@ -243,13 +324,17 @@ const ServiceItem = ({
               <h3 className="font-semibold text-sm">{service.name}</h3>
               <p className="text-sm text-gray-400">{service.description}</p>
               <div className="flex items-center justify-between">
-                <p className="font-bold text-sm text-primary">
-                  {Intl.NumberFormat("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  }).format(Number(service.price))}
-                </p>
-
+                <div className="flex flex-col">
+                  <p className="font-bold text-sm text-primary">
+                    {Intl.NumberFormat("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    }).format(Number(service.price))}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Duração: {service.durationInMinutes} min
+                  </p>
+                </div>
                 <Sheet
                   open={bookingSheetIsOpen}
                   onOpenChange={handleOpenSheetOpenChange}
@@ -261,7 +346,6 @@ const ServiceItem = ({
                   >
                     Agendar
                   </Button>
-
                   <SheetContent className="overflow-y-auto w-full md:w-[540px] px-0">
                     <SheetHeader className="px-5 text-left">
                       <SheetTitle>Faça sua Reserva</SheetTitle>
@@ -270,14 +354,16 @@ const ServiceItem = ({
                         <span className="font-semibold text-primary">
                           {service.name}
                         </span>
-                        <br />
-                        Barbearia:{" "}
+                        <br /> Barbearia:{" "}
                         <span className="font-semibold">{barbershop.name}</span>
-                        <br />
+                        <br /> Duração:{" "}
+                        <span className="font-semibold">
+                          {service.durationInMinutes} minutos
+                        </span>
                       </SheetDescription>
                     </SheetHeader>
 
-                    <div className="py-4 flex flex-col items-center border-b border-solid border-border-foreground/20">
+                    <div className="py-4 flex flex-col items-center border-b border-border-foreground/20">
                       <Calendar
                         mode="single"
                         selected={form.watch("date")}
@@ -292,9 +378,8 @@ const ServiceItem = ({
                     <div className="px-5 py-4 space-y-4">
                       {form.watch("date") ? (
                         <>
-                          {/* Barbeiro */}
                           <div>
-                            <Label htmlFor="barber">Barbeiro</Label>
+                            <Label>Barbeiro</Label>
                             <Select
                               onValueChange={(value) =>
                                 form.setValue("barberId", value, {
@@ -313,32 +398,33 @@ const ServiceItem = ({
                                 >
                                   Selecione um barbeiro
                                 </SelectItem>
-                                {availableBarbers.length === 0 ? (
-                                  <SelectItem
-                                    value={NO_BARBERS_FOUND_VALUE}
-                                    disabled
-                                  >
-                                    Nenhum barbeiro disponível
+                                {availableBarbers.map((barber) => (
+                                  <SelectItem key={barber.id} value={barber.id}>
+                                    {barber.user.name || barber.user.email}
                                   </SelectItem>
-                                ) : (
-                                  availableBarbers.map((barber) => (
-                                    <SelectItem
-                                      key={barber.id}
-                                      value={barber.id}
-                                    >
-                                      {barber.user.name || barber.user.email}
-                                    </SelectItem>
-                                  ))
-                                )}
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
 
-                          {/* Horário */}
                           {form.watch("barberId") !==
                             UNSELECTED_PLACEHOLDER_VALUE && (
                             <div>
-                              <Label htmlFor="time">Horário</Label>
+                              <div className="flex items-center justify-between">
+                                <Label>Horário</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={handleRefreshSlots}
+                                  disabled={fetchingSlots}
+                                  className="text-xs"
+                                >
+                                  {fetchingSlots
+                                    ? "Atualizando..."
+                                    : "Atualizar"}
+                                </Button>
+                              </div>
                               <Select
                                 onValueChange={(value) =>
                                   form.setValue("time", value, {
@@ -359,10 +445,7 @@ const ServiceItem = ({
                                 </SelectTrigger>
                                 <SelectContent>
                                   {fetchingSlots ? (
-                                    <SelectItem
-                                      value={LOADING_SLOTS_VALUE}
-                                      disabled
-                                    >
+                                    <SelectItem value="loading" disabled>
                                       Carregando...
                                     </SelectItem>
                                   ) : availableSlots.length === 0 ? (
@@ -384,6 +467,12 @@ const ServiceItem = ({
                                   )}
                                 </SelectContent>
                               </Select>
+                              {availableSlots.length > 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {availableSlots.length} horário(s)
+                                  disponível(is)
+                                </p>
+                              )}
                             </div>
                           )}
                         </>
@@ -396,9 +485,12 @@ const ServiceItem = ({
 
                     <SheetFooter className="px-5">
                       <Button
-                        onClick={form.handleSubmit(handleCreateBooking)}
+                        onClick={form.handleSubmit(handleSubmit)}
                         disabled={
-                          isConfirmingBooking || !form.formState.isValid
+                          isConfirmingBooking ||
+                          !form.formState.isValid ||
+                          availableSlots.length === 0 ||
+                          fetchingSlots
                         }
                         className="w-full"
                       >
