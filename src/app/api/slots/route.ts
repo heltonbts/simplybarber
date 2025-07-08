@@ -4,6 +4,8 @@ import { NextRequest } from "next/server";
 import { getAvailableTimeSlots } from "@/actions/create-booking";
 import { unstable_noStore as noStore } from "next/cache";
 
+export const runtime = "nodejs";
+
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
