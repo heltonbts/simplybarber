@@ -24,7 +24,6 @@ const BarbershopItem = ({ barbershop }: BarbershopItemProps) => {
 
           <Badge className="absolute top-2 right-2" variant="secondary">
             <StarIcon size={12} className="fill-primary text-primary" />
-            <p className="text-xs font-semibold">5,0</p>
           </Badge>
         </div>
         <div className="px-2 py-3">

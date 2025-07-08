@@ -78,10 +78,6 @@ const DashboardPage = async () => {
             </CardTitle>
             <i className="ph-bold ph-currency-dollar text-2xl text-green-400"></i>
           </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">R$ 1.250</p>
-            <p className="text-xs text-gray-500">+15% vs. ontem</p>
-          </CardContent>
         </Card>
         <Card className="bg-[#141416] border-gray-800 text-white">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

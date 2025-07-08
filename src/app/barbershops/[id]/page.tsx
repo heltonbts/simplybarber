@@ -79,7 +79,6 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
         </div>
         <div className="flex items-center gap-1">
           <StarIcon className="text-primary" size={18} />
-          <p className="text-sm">5,0 (522 avaliações)</p>
         </div>
       </div>
       <div className="p-5 border-b border-solid space-y-3">
