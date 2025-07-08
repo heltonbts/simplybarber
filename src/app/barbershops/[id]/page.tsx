@@ -48,8 +48,6 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
     user: barber.user,
   }));
 
-  const barbershopWorkingHours = barbershop.BarbershopWorkingHour;
-
   return (
     <div>
       <div className="relative h-[250px] w-full">
@@ -99,7 +97,6 @@ export default async function BarbershopPage({ params }: BarbershopPageProps) {
               service={service}
               barbershop={barbershop}
               availableBarbers={adaptedBarbers}
-              barbershopWorkingHours={barbershopWorkingHours}
             />
           ))}
         </div>

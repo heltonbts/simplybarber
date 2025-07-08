@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import {
-  createBooking,
+  createBookingAction,
   updateBooking,
   BookingDetails,
   BarberWithUser,
@@ -106,7 +106,18 @@ export function ManualBookingForm({
         await updateBooking({ ...payload, bookingId: initialData.id });
         toast.success("Agendamento atualizado com sucesso!");
       } else {
-        const result = await createBooking(payload);
+        // TODO: Replace 'userId' with the actual user ID if available
+        const userId = ""; // Provide the correct userId here
+        const selectedDate = format(combinedDate, "yyyy-MM-dd");
+        const selectedTime = format(combinedDate, "HH:mm");
+        const result = await createBookingAction(
+          barbershopId,
+          data.barberId,
+          data.serviceId,
+          userId,
+          selectedDate,
+          selectedTime,
+        );
         if (!result.success) throw new Error(result.error);
         toast.success("Agendamento criado com sucesso!");
       }
