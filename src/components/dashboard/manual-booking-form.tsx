@@ -8,13 +8,7 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-import {
-  createBookingAction,
-  updateBooking,
-  BookingDetails,
-  BarberWithUser,
-  CreateBookingInput,
-} from "@/actions/create-booking";
+import { BookingDetails, BarberWithUser } from "@/actions/create-booking";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +27,7 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { BarbershopService } from "../../../generated/prisma";
+import { createManualBookingAction } from "@/actions/create-booking-manual";
 
 const bookingFormSchema = z.object({
   clientName: z.string().min(3, "Nome do cliente é obrigatório."),
@@ -82,51 +77,41 @@ export function ManualBookingForm({
   });
 
   const onSubmit = async (data: BookingFormValues) => {
-    if (!data.date) {
-      toast.error("Por favor, selecione uma data para o agendamento.");
+    if (!data.date || !data.time) {
+      toast.error("Por favor, selecione uma data e um horário.");
       return;
     }
 
     try {
-      const [hours, minutes] = data.time.split(":").map(Number);
-      const combinedDate = new Date(data.date);
-      combinedDate.setHours(hours, minutes, 0, 0);
-
-      const payload: CreateBookingInput = {
-        userId: null,
-        barbershopId,
-        serviceId: data.serviceId,
-        barberId: data.barberId,
-        date: combinedDate,
-        clientName: data.clientName,
-        clientPhone: data.clientPhone,
-        notes: data.notes,
-      };
+      // 1. Apenas pegue a data e a hora como strings, sem criar ou manipular objetos Date.
+      const selectedDate = format(data.date, "yyyy-MM-dd");
+      const selectedTime = data.time;
 
       if (initialData) {
-        await updateBooking({ ...payload, bookingId: initialData.id });
-        toast.success("Agendamento atualizado com sucesso!");
+        // A mesma lógica se aplica aqui: envie as strings para a sua função de update.
+        // await updateBooking({ ... });
+        toast.info("A lógica de atualização também precisa ser revisada.");
       } else {
-        // TODO: Replace 'userId' with the actual user ID if available
-        const userId = ""; // Provide the correct userId here or fetch from context/auth
-        const selectedDate = format(combinedDate, "yyyy-MM-dd");
-        const selectedTime = format(combinedDate, "HH:mm");
-        const result = await createBookingAction(
+        // 2. Envie as strings diretamente para a sua server action.
+        // O servidor fará o trabalho pesado de converter o fuso horário corretamente.
+        await createManualBookingAction(
           barbershopId,
           data.barberId,
           data.serviceId,
-          userId,
-          selectedDate,
-          selectedTime,
-          data.clientName,
-          data.clientPhone,
-          data.notes,
+          selectedDate, // <-- 4º argumento
+          selectedTime, // <-- 5º argumento
+          data.clientName, // <-- 6º argumento
+          data.clientPhone, // <-- 7º argumento
+          data.notes, // <-- 8º argumento (opcional)
+          null, // <-- 9º argumento (userId), agora na posição correta.
         );
-        if (!result.success) throw new Error(result.error);
+
         toast.success("Agendamento criado com sucesso!");
       }
-      onFinished();
+
+      onFinished(); // Chamado apenas em caso de sucesso.
     } catch (error) {
+      // 3. Um único `catch` para lidar com todos os erros da operação.
       const errorMessage =
         error instanceof Error ? error.message : "Ocorreu um erro.";
       toast.error(errorMessage);
