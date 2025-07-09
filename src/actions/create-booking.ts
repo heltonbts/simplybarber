@@ -154,8 +154,9 @@ export async function getAvailableTimeSlots(
     }
 
     // 2. Busca agendamentos existentes na data selecionada
-    const startOfSelectedDay = startOfDay(selectedDate);
-    const endOfSelectedDay = endOfDay(selectedDate);
+    const brazilDate = toBrazilTime(selectedDate);
+    const startOfSelectedDay = startOfDay(brazilDate);
+    const endOfSelectedDay = endOfDay(brazilDate);
 
     const existingBookings = await tx.booking.findMany({
       where: {
@@ -193,10 +194,8 @@ export async function getAvailableTimeSlots(
       currentTime = addMinutes(currentTime, 15);
     }
 
-    const now = new Date();
+    const now = toBrazilTime(new Date());
 
-    // 👇 PONTO CHAVE DA CORREÇÃO 👇
-    // Converte os agendamentos do banco (UTC) para o fuso local ANTES de comparar.
     const existingBookingsInBrazilTime = existingBookings.map((booking) => {
       const bookingStartBrazil = toBrazilTime(booking.date);
       return {
