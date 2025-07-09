@@ -12,19 +12,17 @@ import {
   getDay,
   addMinutes,
   isBefore,
-  isAfter,
-  startOfDay,
-  endOfDay,
-  format,
-  setMinutes,
-  setHours,
   parseISO,
   areIntervalsOverlapping,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { Booking, BarbershopService, User } from "../../generated/prisma";
-import { createBrazilDateTime, toBrazilTime } from "@/lib/timezone-utils";
+import {
+  createBrazilDateTime,
+  toBrazilTime,
+  TIMEZONE,
+} from "@/lib/timezone-utils";
 
 export interface CreateBookingInput {
   userId: string | null;
@@ -131,14 +129,14 @@ export async function updateBooking(payload: UpdateBookingInput) {
 
 export async function getAvailableTimeSlots(
   barbershopId: string,
-  selectedDate: Date, // A data já vem corrigida da API como `new Date('YYYY-MM-DDTHH:mm:ss')`
+  selectedDate: Date, // A data que vem da API, ex: 2025-07-09T12:00:00.000Z
   serviceId: string,
   barberId: string,
 ): Promise<string[]> {
   nextCacheNoStore();
 
   return await db.$transaction(async (tx) => {
-    // 1. Busca dados essenciais
+    // 1. Busca dados essenciais (sem mudança aqui)
     const service = await tx.barbershopService.findUnique({
       where: { id: serviceId },
       select: { durationInMinutes: true },
@@ -153,113 +151,74 @@ export async function getAvailableTimeSlots(
       return [];
     }
 
-    // 2. Busca agendamentos existentes na data selecionada
-    const brazilDate = toBrazilTime(selectedDate);
-    const startOfSelectedDay = startOfDay(brazilDate);
-    const endOfSelectedDay = endOfDay(brazilDate);
+    // --- LÓGICA DE DATAS REFEITA E ROBUSTA ---
+
+    // 2. Crie os limites do dia de trabalho DIRETAMENTE EM UTC
+    // Pega a data "local" do Brasil e as horas de trabalho e converte para o UTC correspondente.
+    const dateString = formatInTimeZone(selectedDate, TIMEZONE, "yyyy-MM-dd");
+    const startOfWorkDayUTC = fromZonedTime(
+      `${dateString}T${barbershopWorkingHour.openTime}`,
+      TIMEZONE,
+    );
+    const endOfWorkDayUTC = fromZonedTime(
+      `${dateString}T${barbershopWorkingHour.closeTime}`,
+      TIMEZONE,
+    );
+
+    // 3. Busque os agendamentos existentes usando um intervalo UTC explícito
+    const startOfDayUTC = fromZonedTime(`${dateString}T00:00:00`, TIMEZONE);
+    const endOfDayUTC = fromZonedTime(`${dateString}T23:59:59`, TIMEZONE);
 
     const existingBookings = await tx.booking.findMany({
       where: {
         barberId,
         barbershopId,
         date: {
-          gte: startOfSelectedDay,
-          lte: endOfSelectedDay,
+          gte: startOfDayUTC,
+          lte: endOfDayUTC,
         },
       },
       include: { service: { select: { durationInMinutes: true } } },
     });
 
-    // 3. Prepara horários de trabalho no fuso horário local (Brasil)
-    const [openHour, openMinute] = barbershopWorkingHour.openTime
-      .split(":")
-      .map(Number);
-    const [closeHour, closeMinute] = barbershopWorkingHour.closeTime
-      .split(":")
-      .map(Number);
-
-    const startOfWorkDay = setMinutes(
-      setHours(startOfSelectedDay, openHour),
-      openMinute,
-    );
-    const endOfWorkDay = setMinutes(
-      setHours(startOfSelectedDay, closeHour),
-      closeMinute,
-    );
-
-    // 4. Gera slots potenciais no fuso horário local
-    const potentialSlots: Date[] = [];
-    let currentTime = startOfWorkDay;
-    while (isBefore(currentTime, endOfWorkDay)) {
-      potentialSlots.push(new Date(currentTime));
-      currentTime = addMinutes(currentTime, 15);
+    // 4. Gere os slots potenciais em UTC
+    const potentialSlotsUTC: Date[] = [];
+    let currentTimeUTC = startOfWorkDayUTC;
+    while (currentTimeUTC < endOfWorkDayUTC) {
+      potentialSlotsUTC.push(new Date(currentTimeUTC));
+      currentTimeUTC = addMinutes(currentTimeUTC, 15);
     }
 
-    const now = toBrazilTime(new Date());
+    // 5. Filtre os slots comparando tudo em UTC
+    const nowUTC = new Date(); // A hora atual já é UTC por padrão
 
-    const existingBookingsInBrazilTime = existingBookings.map((booking) => {
-      const bookingStartBrazil = toBrazilTime(booking.date);
-      return {
-        start: bookingStartBrazil,
-        end: addMinutes(bookingStartBrazil, booking.service.durationInMinutes),
-      };
-    });
+    const availableSlotsUTC = potentialSlotsUTC.filter((slotStartUTC) => {
+      const slotEndUTC = addMinutes(slotStartUTC, service.durationInMinutes);
 
-    // 5. Filtra os slots comparando todos no mesmo fuso horário
-    const availableSlots = potentialSlots.filter((slotStart) => {
-      const slotEnd = addMinutes(slotStart, service.durationInMinutes);
+      // Checagem #1: O slot termina depois do expediente?
+      if (slotEndUTC > endOfWorkDayUTC) return false;
 
-      if (isAfter(slotEnd, endOfWorkDay)) return false;
-      if (isBefore(slotStart, now)) return false;
+      // Checagem #2: O slot já passou? (só para o dia de hoje)
+      if (isBefore(slotStartUTC, nowUTC)) return false;
 
-      // Compara os slots (em fuso local) com os agendamentos (agora também em fuso local)
-      return !existingBookingsInBrazilTime.some((booking) =>
+      // Checagem #3: O slot conflita com agendamentos existentes?
+      return !existingBookings.some((booking) =>
         areIntervalsOverlapping(
-          { start: slotStart, end: slotEnd },
-          { start: booking.start, end: booking.end },
+          { start: slotStartUTC, end: slotEndUTC },
+          {
+            start: booking.date,
+            end: addMinutes(booking.date, booking.service.durationInMinutes),
+          },
           { inclusive: false },
         ),
       );
     });
 
-    console.log("======== PRODUCTION DIAGNOSTIC LOG ========");
-    console.log(`Node.js Version: ${process.version}`);
-    console.log(`Input selectedDate (UTC): ${selectedDate.toISOString()}`);
-    console.log(
-      `Querying bookings from (UTC): ${startOfSelectedDay.toISOString()}`,
+    // 6. Formate o resultado final para o usuário
+    // Converte os slots UTC válidos para strings de hora no fuso do Brasil
+    return availableSlotsUTC.map((utcDate) =>
+      formatInTimeZone(utcDate, TIMEZONE, "HH:mm"),
     );
-    console.log(
-      `Querying bookings to (UTC): ${endOfSelectedDay.toISOString()}`,
-    );
-    console.log(`Calculated 'now' in Brazil Time (UTC): ${now.toISOString()}`);
-    console.log(
-      `Found ${existingBookings.length} existing bookings for this day.`,
-    );
-    console.log(
-      "Existing Bookings Details:",
-      JSON.stringify(
-        existingBookings.map((b) => ({
-          date: b.date.toISOString(),
-          duration: b.service.durationInMinutes,
-        })),
-        null,
-        2,
-      ),
-    );
-
-    console.log("++++++ INICIO DO DEBUG +++++");
-
-    console.log({
-      now: format(now, "yyyy-MM-dd HH:mm:ss"),
-      startOfDay: format(startOfSelectedDay, "yyyy-MM-dd HH:mm"),
-      endOfDay: format(endOfSelectedDay, "yyyy-MM-dd HH:mm"),
-      startOfWorkDay: format(startOfWorkDay, "HH:mm"),
-      endOfWorkDay: format(endOfWorkDay, "HH:mm"),
-      slots: potentialSlots.map((s) => format(s, "HH:mm")),
-      filtered: availableSlots.map((s) => format(s, "HH:mm")),
-    });
-
-    return availableSlots.map((date) => format(date, "HH:mm"));
   });
 }
 

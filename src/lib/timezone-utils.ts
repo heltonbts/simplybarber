@@ -2,7 +2,7 @@
 
 import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 
-const TIMEZONE = "America/Sao_Paulo";
+export const TIMEZONE = "America/Sao_Paulo";
 
 export function getCurrentBrazilTime(): Date {
   return toZonedTime(new Date(), TIMEZONE);
