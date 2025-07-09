@@ -11,7 +11,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Barbershop, BarbershopService } from "../../generated/prisma";
-import { toUTC } from "@/lib/timezone-utils";
 
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -190,56 +189,6 @@ const ServiceItem = ({
     }
   };
 
-  const createBooking = async (selectedTime: string) => {
-    const date = form.watch("date");
-    const barberId = form.watch("barberId");
-
-    if (!date || !barberId) {
-      throw new Error("Data e barbeiro são obrigatórios");
-    }
-
-    const utcDate = toUTC(date);
-    const dateString = format(utcDate, "yyyy-MM-dd");
-
-    console.log("📅 Criando agendamento:", {
-      barbershopId: barbershop.id,
-      barberId,
-      serviceId: service.id,
-      selectedDate: dateString,
-      selectedTime,
-      serviceName: service.name,
-      serviceDuration: service.durationInMinutes + " minutos",
-    });
-
-    const response = await fetch("/api/bookings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-      },
-      body: JSON.stringify({
-        barbershopId: barbershop.id,
-        barberId,
-        serviceId: service.id,
-        userId: sessionData?.user?.id,
-        selectedDate: dateString,
-        selectedTime,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData?.error || `Erro ${response.status}: ${response.statusText}`,
-      );
-    }
-
-    const result = await response.json();
-    console.log("✅ Agendamento criado com sucesso:", result);
-
-    return result;
-  };
-
   const handleSubmit = async (data: CreateBookingFormInput) => {
     if (status !== "authenticated" || !sessionData?.user?.id) {
       showLoginAlert();
@@ -249,13 +198,40 @@ const ServiceItem = ({
     setIsConfirmingBooking(true);
 
     try {
-      await createBooking(data.time);
+      // FIXED: Pass the date as a string to avoid timezone conversion issues
+      const dateString = format(data.date, "yyyy-MM-dd");
 
-      console.log(
-        "🎉 Agendamento confirmado! Atualizando lista de horários...",
-      );
+      const bookingData = {
+        barbershopId: barbershop.id,
+        barberId: data.barberId,
+        serviceId: service.id,
+        userId: sessionData.user.id,
+        selectedDate: dateString,
+        selectedTime: data.time,
+      };
 
-      // Atualizar imediatamente os slots disponíveis
+      console.log("📤 Sending booking data:", bookingData);
+
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
+        body: JSON.stringify(bookingData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData?.error || `Erro ${response.status}: ${response.statusText}`,
+        );
+      }
+
+      const result = await response.json();
+      console.log("✅ Booking created successfully:", result);
+
+      // Refresh available slots
       await fetchAvailableSlots(false);
 
       toast.success("Agendamento confirmado com sucesso!");
@@ -269,9 +245,7 @@ const ServiceItem = ({
 
       setBookingSheetIsOpen(false);
     } catch (error) {
-      console.error("❌ Erro ao confirmar agendamento:", error);
-
-      // Atualizar slots mesmo em caso de erro para garantir sincronização
+      console.error("❌ Error creating booking:", error);
       await fetchAvailableSlots(false);
 
       const errorMessage =

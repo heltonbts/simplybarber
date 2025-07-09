@@ -1,12 +1,10 @@
-// /app/api/slots/route.ts
-
 import { NextRequest } from "next/server";
 import { getAvailableTimeSlots } from "@/actions/create-booking";
+import { createBrazilDateFromString } from "@/lib/timezone-utils";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
-
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
@@ -23,7 +21,16 @@ export async function GET(req: NextRequest) {
     return new Response("Missing params", { status: 400 });
   }
 
-  const dateObj = new Date(`${date}T12:00:00.000Z`);
+  // FIXED: Use the new helper function for consistent date handling
+  const dateObj = createBrazilDateFromString(date);
+
+  console.log("🌍 API Slots - Timezone Debug:", {
+    receivedDate: date,
+    parsedDate: dateObj.toISOString(),
+    brazilTime: dateObj.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+    }),
+  });
 
   const slots = await getAvailableTimeSlots(
     barbershopId,
@@ -32,5 +39,12 @@ export async function GET(req: NextRequest) {
     barberId,
   );
 
-  return Response.json({ slots, timestamp: new Date().toISOString() });
+  return Response.json({
+    slots,
+    timestamp: new Date().toISOString(),
+    debug: {
+      receivedDate: date,
+      processedDate: dateObj.toISOString(),
+    },
+  });
 }

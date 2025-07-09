@@ -1,54 +1,91 @@
-// src/app/api/bookings/route.ts
+// /app/api/bookings/route.ts - VERSÃO FINAL E CORRETA
 import { NextRequest, NextResponse } from "next/server";
-import { createBookingAction } from "@/actions/create-booking";
-import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
+// Importe as funções que vamos usar para a validação
+import {
+  getAvailableTimeSlots,
+  createBookingAction,
+} from "@/actions/create-booking";
+import { createBrazilDateFromString } from "@/lib/timezone-utils";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const session = await getServerSession(authOptions);
 
-    const {
-      barbershopId,
-      barberId,
-      serviceId,
-      userId,
-      selectedDate,
-      selectedTime,
-    } = body;
+    if (!session?.user?.id) {
+      return new NextResponse(JSON.stringify({ error: "Não autorizado" }), {
+        status: 401,
+      });
+    }
+
+    const body = await req.json();
+    const { barbershopId, barberId, serviceId, selectedDate, selectedTime } =
+      body;
 
     if (
       !barbershopId ||
       !barberId ||
       !serviceId ||
-      !userId ||
       !selectedDate ||
       !selectedTime
     ) {
-      return NextResponse.json(
-        { error: "Parâmetros obrigatórios ausentes" },
+      return new NextResponse(
+        JSON.stringify({ error: "Campos obrigatórios faltando" }),
         { status: 400 },
       );
     }
 
-    const result = await createBookingAction(
+    // --- INÍCIO DA VALIDAÇÃO EM TEMPO REAL ---
+
+    // 1. Buscamos os horários disponíveis no exato momento do clique, usando as funções que já corrigimos.
+    const dateObj = createBrazilDateFromString(selectedDate);
+    const availableSlots = await getAvailableTimeSlots(
+      barbershopId,
+      dateObj,
+      serviceId,
+      barberId,
+    );
+
+    // 2. Verificamos se o horário que o usuário quer ainda está na lista de disponíveis.
+    const isSlotStillAvailable = availableSlots.includes(selectedTime);
+
+    // 3. Se o horário NÃO estiver mais disponível, paramos aqui e retornamos um erro.
+    if (!isSlotStillAvailable) {
+      console.error(
+        `VALIDAÇÃO FALHOU: O horário ${selectedTime} não está na lista de horários disponíveis.`,
+      );
+      return new NextResponse(
+        JSON.stringify({
+          error:
+            "Este horário foi agendado por outra pessoa. Por favor, escolha outro.",
+        }),
+        { status: 409 }, // 409 Conflict
+      );
+    }
+    // --- FIM DA VALIDAÇÃO ---
+
+    // 4. Se o horário PASSOU na validação, aí sim chamamos a sua createBookingAction.
+    console.log(`Validação OK. Criando agendamento para ${selectedTime}...`);
+    const booking = await createBookingAction(
       barbershopId,
       barberId,
       serviceId,
-      userId,
+      session.user.id,
       selectedDate,
       selectedTime,
     );
 
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-
-    revalidatePath(`/barbershop/${barbershopId}`);
-    return NextResponse.json({ booking: result.booking }, { status: 200 });
+    // Retorna 201 Created (sucesso)
+    return new NextResponse(JSON.stringify(booking), { status: 201 });
   } catch (error) {
-    console.error("Erro interno ao criar agendamento:", error);
-    return NextResponse.json(
-      { error: "Erro interno do servidor" },
+    console.error("❌ Erro na API /api/bookings:", error);
+    return new NextResponse(
+      JSON.stringify({
+        error:
+          error instanceof Error ? error.message : "Erro interno do servidor",
+      }),
       { status: 500 },
     );
   }

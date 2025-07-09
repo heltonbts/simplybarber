@@ -12,17 +12,12 @@ import {
   getDay,
   addMinutes,
   isBefore,
-  parseISO,
   areIntervalsOverlapping,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { Booking, BarbershopService, User } from "../../generated/prisma";
-import {
-  createBrazilDateTime,
-  toBrazilTime,
-  TIMEZONE,
-} from "@/lib/timezone-utils";
+import { toBrazilTime, TIMEZONE } from "@/lib/timezone-utils";
 
 export interface CreateBookingInput {
   userId: string | null;
@@ -227,71 +222,38 @@ export async function createBookingAction(
   barberId: string,
   serviceId: string,
   userId: string | null,
-  selectedDate: string,
-  selectedTime: string,
-  clientName?: string,
-  clientPhone?: string,
-  notes?: string,
+  selectedDate: string, // Formato "yyyy-MM-dd"
+  selectedTime: string, // Formato "HH:mm"
 ) {
-  nextCacheNoStore();
+  // Esta função agora tem UMA responsabilidade: criar o agendamento.
+  // Ela confia que a validação já foi feita pela API route.
 
-  try {
-    const selectedDateObj = parseISO(selectedDate);
+  const bookingDateUTC = fromZonedTime(
+    `${selectedDate}T${selectedTime}:00`,
+    TIMEZONE,
+  );
 
-    // 1. REVALIDAÇÃO: Busca os horários realmente disponíveis no exato momento da criação.
-    const availableSlots = await getAvailableTimeSlots(
-      barbershopId,
-      selectedDateObj,
-      serviceId,
-      barberId,
-    );
+  const data: any = {
+    barbershopId,
+    barberId,
+    serviceId,
+    date: bookingDateUTC,
+  };
 
-    // 2. VERIFICAÇÃO: Confirma se o horário enviado pelo cliente ainda está na lista.
-    const isSlotStillAvailable = availableSlots.includes(selectedTime);
-
-    if (!isSlotStillAvailable) {
-      console.error(
-        `TENTATIVA DE AGENDAMENTO CONFLITANTE: O horário ${selectedTime} não está mais disponível.`,
-      );
-      throw new Error(
-        "Este horário foi agendado por outra pessoa. Por favor, escolha outro.",
-      );
-    }
-
-    // 3. CRIAÇÃO: Se o horário passou na verificação, cria o agendamento.
-    const bookingDateUTC = createBrazilDateTime(selectedDate, selectedTime);
-
-    const data: any = {
-      barbershopId,
-      barberId,
-      serviceId,
-      date: bookingDateUTC,
-      clientName,
-      clientPhone,
-      notes,
-    };
-
-    // Adiciona userId somente se for válido
-    if (userId) {
-      data.userId = userId;
-    }
-
-    const booking = await db.booking.create({ data });
-
-    // Revalida os paths para atualizar a UI em outros lugares
-    revalidatePath(`/barbershops/${barbershopId}`);
-    revalidatePath("/meus-agendamentos");
-
-    return { success: true, booking };
-  } catch (error) {
-    console.error("Erro ao criar booking:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido",
-    };
+  // Adiciona userId somente se for válido
+  if (userId) {
+    data.userId = userId;
   }
-}
 
+  console.log("Database write operation:", {
+    dateUTC: bookingDateUTC.toISOString(),
+  });
+
+  const booking = await db.booking.create({ data });
+
+  // A função original retornava um objeto, vamos manter isso
+  return { success: true, booking };
+}
 export async function deleteBooking(bookingId: string) {
   const session = await getServerSession(authOptions);
 
