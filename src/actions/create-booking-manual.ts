@@ -1,3 +1,5 @@
+"use server";
+
 import { db } from "@/lib/prisma";
 import { TIMEZONE } from "@/lib/timezone-utils";
 import { fromZonedTime } from "date-fns-tz";
