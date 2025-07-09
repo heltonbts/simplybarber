@@ -177,6 +177,7 @@ export async function getAvailableTimeSlots(
     const [closeHour, closeMinute] = barbershopWorkingHour.closeTime
       .split(":")
       .map(Number);
+
     const startOfWorkDay = setMinutes(
       setHours(startOfSelectedDay, openHour),
       openMinute,
@@ -219,6 +220,18 @@ export async function getAvailableTimeSlots(
           { inclusive: false },
         ),
       );
+    });
+
+    console.log("++++++ INICIO DO DEBUG +++++");
+
+    console.log({
+      now: format(now, "yyyy-MM-dd HH:mm:ss"),
+      startOfDay: format(startOfSelectedDay, "yyyy-MM-dd HH:mm"),
+      endOfDay: format(endOfSelectedDay, "yyyy-MM-dd HH:mm"),
+      startOfWorkDay: format(startOfWorkDay, "HH:mm"),
+      endOfWorkDay: format(endOfWorkDay, "HH:mm"),
+      slots: potentialSlots.map((s) => format(s, "HH:mm")),
+      filtered: availableSlots.map((s) => format(s, "HH:mm")),
     });
 
     return availableSlots.map((date) => format(date, "HH:mm"));

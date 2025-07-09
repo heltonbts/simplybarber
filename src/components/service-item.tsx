@@ -120,7 +120,7 @@ const ServiceItem = ({
     }
 
     try {
-      const dateString = format(toUTC(date), "yyyy-MM-dd");
+      const dateString = format(date, "yyyy-MM-dd");
 
       console.log("🔍 Buscando slots para:", {
         barbershopId: barbershop.id,
@@ -132,7 +132,7 @@ const ServiceItem = ({
       });
 
       const res = await fetch(
-        `/api/slots?barbershopId=${barbershop.id}&serviceId=${service.id}&barberId=${barberId}&date=${dateString}&_t=${Date.now()}`,
+        `/api/slots?barbershopId=${barbershop.id}&serviceId=${service.id}&barberId=${barberId}&date=${encodeURIComponent(dateString)}&_t=${Date.now()}`,
         {
           method: "GET",
           cache: "no-store",

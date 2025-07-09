@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     return new Response("Missing params", { status: 400 });
   }
 
-  const dateObj = new Date(`${date}T00:00:00`);
+  const dateObj = new Date(`${date}T12:00:00.000Z`);
 
   const slots = await getAvailableTimeSlots(
     barbershopId,
