@@ -222,6 +222,31 @@ export async function getAvailableTimeSlots(
       );
     });
 
+    console.log("======== PRODUCTION DIAGNOSTIC LOG ========");
+    console.log(`Node.js Version: ${process.version}`);
+    console.log(`Input selectedDate (UTC): ${selectedDate.toISOString()}`);
+    console.log(
+      `Querying bookings from (UTC): ${startOfSelectedDay.toISOString()}`,
+    );
+    console.log(
+      `Querying bookings to (UTC): ${endOfSelectedDay.toISOString()}`,
+    );
+    console.log(`Calculated 'now' in Brazil Time (UTC): ${now.toISOString()}`);
+    console.log(
+      `Found ${existingBookings.length} existing bookings for this day.`,
+    );
+    console.log(
+      "Existing Bookings Details:",
+      JSON.stringify(
+        existingBookings.map((b) => ({
+          date: b.date.toISOString(),
+          duration: b.service.durationInMinutes,
+        })),
+        null,
+        2,
+      ),
+    );
+
     console.log("++++++ INICIO DO DEBUG +++++");
 
     console.log({
