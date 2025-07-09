@@ -193,7 +193,7 @@ export async function getAvailableTimeSlots(
       currentTime = addMinutes(currentTime, 15);
     }
 
-    const now = toBrazilTime(new Date());
+    const now = new Date();
 
     // 👇 PONTO CHAVE DA CORREÇÃO 👇
     // Converte os agendamentos do banco (UTC) para o fuso local ANTES de comparar.

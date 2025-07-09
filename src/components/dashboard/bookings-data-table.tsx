@@ -11,6 +11,7 @@ import {
   ScissorsIcon,
   Trash2,
   UserIcon,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { BookingDetails } from "@/actions/create-booking";
 import { toBrazilTime } from "@/lib/timezone-utils";
+import { toast } from "sonner";
 
 interface BookingsDataTableProps {
   data: BookingDetails[];
@@ -41,6 +43,27 @@ export function BookingsDataTable({
                 <p>Nenhum agendamento encontrado.</p>     {" "}
       </div>
     );
+  }
+
+  const handleCopy = async (booking: BookingDetails) => {
+    const phone = booking.clientPhone || booking.user?.phone;
+
+    if (!phone) {
+      alert("Telefone não disponível.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(phone);
+      toast.success("Número copiado!");
+    } catch (err) {
+      console.error("Erro ao copiar:", err);
+      alert("Erro ao copiar o número");
+    }
+  };
+
+  function formatPhone(phone: string) {
+    return phone.replace(/^(\+55|55)/, "");
   }
 
   return (
@@ -75,6 +98,13 @@ export function BookingsDataTable({
                       <span>Editar</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      className="text-white"
+                      onClick={() => handleCopy(booking)}
+                    >
+                      <Phone className="mr-1 h-3 w-3" />
+                      <span>Contato</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       className="text-red-600"
                       onClick={() => onDelete(booking.id)}
                     >
@@ -94,16 +124,12 @@ export function BookingsDataTable({
 
               <div className="flex items-center gap-1">
                 <CalendarIcon className="h-3 w-3" />
-                <span>
-                  {format(toBrazilTime(new Date(booking.date)), "dd/MM/yy")}
-                </span>
+                <span>{format(new Date(booking.date), "dd/MM/yy")}</span>
               </div>
 
               <div className="flex items-center gap-1">
                 <ClockIcon className="h-3 w-3" />
-                <span>
-                  {format(toBrazilTime(new Date(booking.date)), "HH:mm")}
-                </span>
+                <span>{format(new Date(booking.date), "HH:mm")}</span>
               </div>
 
               <div className="flex items-center gap-1">
@@ -114,6 +140,15 @@ export function BookingsDataTable({
               <div className="flex items-center gap-1">
                 <PersonStandingIcon className="h-3 w-3" />
                 <span>{booking.barber.user.name}</span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Phone className="h-3 w-3" />
+                <span>
+                  {formatPhone(
+                    booking.clientPhone ?? booking.user?.phone ?? "",
+                  )}
+                </span>
               </div>
             </CardContent>
           </Card>
